@@ -818,6 +818,21 @@ class Computer_Player:
         return capturing_moves + non_capturing_moves
 
     def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float) -> float:        
+        if board.__hash__() in self.transposition_table:
+            tt_entry = self.transposition_table[board.__hash__()]
+            if tt_entry.depth >= depth:
+                if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
+                    return tt_entry.value
+                elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
+                    if tt_entry.value > alpha:
+                        alpha = tt_entry.value
+                elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
+                    if tt_entry.value < beta:
+                        beta = tt_entry.value
+
+                if alpha >= beta:
+                    return tt_entry.value
+        
         if depth == 0:
             return self.evaluate(board, board.turn)
         
@@ -831,19 +846,25 @@ class Computer_Player:
 
             return -inf
 
+        tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
+
         for move in self.sort_moves(moves, board):
             board.do_move(move)
             val = -self.alpha_beta(board, depth - 1, -beta, -alpha)
             board.undo_move(move)
 
             if val >= beta:
+                self.transposition_table[board.__hash__()] = Transposition_Table_Entry(depth, beta, Transposition_Table_Entry_Type.LOWER_BOUND)
                 return beta
 
             if val > alpha:
+                tt_type = Transposition_Table_Entry_Type.EXACT
                 alpha = val
 
                 if depth == self.curr_depth:
                     self.best_move = move
+            
+        self.transposition_table[board.__hash__()] = Transposition_Table_Entry(depth, alpha, tt_type)
 
         return alpha
     
@@ -867,7 +888,7 @@ endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(midgame_board, 3)
+move = cp.get_move(midgame_board, 4)
 end = int(round(time.time() * 1000000))
 
 print(move)
