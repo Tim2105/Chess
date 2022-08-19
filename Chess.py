@@ -1,4 +1,5 @@
 from math import inf
+from uuid import uuid4
 
 # Klasse, die einen regulären Schachzug kapselt
 class Move:
@@ -522,6 +523,59 @@ class Board:
         if len(kings) != 2 or kings[0].color == kings[1].color:
             raise ValueError("Invalid FEN string: Both colors must have exactly one King")
         
+        self.init_zobrist()
+        
+    # initialisiere die Zobristtabelle
+    def init_zobrist(self):
+        self.zobrist_table = [[] for j in range(64)]
+
+        for square in self.zobrist_table:
+            for i in range(18):
+                square.append(uuid4().int)
+        
+        self.black_to_move = uuid4().int
+    
+    def get_zobrist_piece_value(self, piece : Piece):
+        if piece == None:
+            raise ValueError("Piece is None")
+        
+        if isinstance(piece, Pawn):
+            if piece.advanced_two_last_move:
+                return piece.color * 9 + 8
+            else:
+                return piece.color * 9
+        elif isinstance(piece, Rook):
+            if piece.moved:
+                return piece.color * 9 + 6
+            else:
+                return piece.color * 9 + 1
+        elif isinstance(piece, Knight):
+            return piece.color * 9 + 2
+        elif isinstance(piece, Bishop):
+            return piece.color * 9 + 3
+        elif isinstance(piece, Queen):
+            return piece.color * 9 + 4
+        elif isinstance(piece, King):
+            if piece.moved:
+                return piece.color * 9 + 7
+            else:
+                return piece.color * 9 + 5
+        else:
+            raise ValueError("Invalid piece")
+        
+
+    # Zobrist Hash
+    # Quelle: https://research.cs.wisc.edu/techreports/1970/TR88.pdf
+    def __hash__(self):
+        res : int = self.black_to_move * self.turn
+    
+        for x in range(8):
+            for y in range(8):
+                if self.board[x][y] != None:
+                    res ^= self.zobrist_table[x * 8 + y][self.get_zobrist_piece_value(self.board[x][y])]
+
+        return res
+        
     # liest einen FEN-String ein und initialisiert das Board
     # FEN-Strings sind der Standard um Schachfelder mit ASCII-Zeichen zu beschreiben
     def read_fen_string(self, fen_string : str):
@@ -720,6 +774,7 @@ class Computer_Player:
     def __init__(self):
         self.curr_depth = 0
         self.best_move = None
+        self.transposition_table = {}
 
     def evaluate(self, board : Board, color : int) -> float:
         value = 0
@@ -733,17 +788,49 @@ class Computer_Player:
         value += self.mobility_value * len(board.get_legitimate_moves(color))
 
         return value
+    
+    def sort_moves(self, moves : list, board : Board):
+        queen_moves = []
+        rook_moves = []
+        bishop_moves = []
+        knight_moves = []
+        pawn_moves = []
+        king_moves = []
+
+        for move in moves:
+            if isinstance(board.board[move.fr[0]][move.fr[1]], Queen):
+                queen_moves.append(move)
+            elif isinstance(board.board[move.fr[0]][move.fr[1]], Rook):
+                rook_moves.append(move)
+            elif isinstance(board.board[move.fr[0]][move.fr[1]], Bishop):
+                bishop_moves.append(move)
+            elif isinstance(board.board[move.fr[0]][move.fr[1]], Knight):
+                knight_moves.append(move)
+            elif isinstance(board.board[move.fr[0]][move.fr[1]], Pawn):
+                pawn_moves.append(move)
+            elif isinstance(board.board[move.fr[0]][move.fr[1]], King):
+                king_moves.append(move)
+
+
+        return queen_moves + rook_moves + bishop_moves + knight_moves + pawn_moves + king_moves
 
     def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float):
+        # Wenn die Spielposition in der Transposition-Tabelle vorhanden ist, dann wird diese zurückgegeben
+        if board in self.transposition_table:
+            return self.transposition_table[board]
+
         if depth == 0:
-            return self.evaluate(board, board.turn)
+            val = self.evaluate(board, board.turn)
+             # füge den Evaluationswert in die Transpositionstabelle ein
+            self.transposition_table[board] = val
+            return val
         
         moves = board.get_legitimate_moves(board.turn)
         if len(moves) == 0:
             return -inf
         
         max_val = alpha
-        for move in moves:
+        for move in self.sort_moves(moves, board):
             board.do_move(move)
             val = -self.alpha_beta(board, depth - 1, -beta, -max_val)
             board.undo_move(move)
@@ -756,6 +843,8 @@ class Computer_Player:
                 if max_val >= beta:
                     return max_val
         
+         # füge den Evaluationswert in die Transpositionstabelle ein
+        self.transposition_table[board] = max_val
         return max_val
     
     def get_move(self, board : Board, depth : int = 4) -> Move:
@@ -775,10 +864,12 @@ starting_board = Board()
 midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
 endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 
-start = int(round(time.time() * 1000000))
 cp = Computer_Player()
-move = cp.get_move(starting_board, 4)
-print(move)
+
+start = int(round(time.time() * 1000000))
+move = cp.get_move(midgame_board, 4)
 end = int(round(time.time() * 1000000))
+
+print(move)
 
 print(f"Zug generiert nach {end - start}µs")
