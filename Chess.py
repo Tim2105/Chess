@@ -1,3 +1,5 @@
+from math import inf
+
 # Klasse, die einen regulären Schachzug kapselt
 class Move:
     def __init__(self, from_pos : tuple, to_pos : tuple):
@@ -147,9 +149,10 @@ class En_Passant_Move(Move):
 
 # Klasse, die eine Bauernaufwertung kapselt
 class Promotion_Move(Move):
-    def __init__(self, from_pos : tuple, to_pos : tuple, promotion_piece : Piece):
+    def __init__(self, from_pos : tuple, to_pos : tuple, promotion_piece : Piece, promoted_piece : Piece):
         super().__init__(from_pos, to_pos)
         self.promotion_piece = promotion_piece
+        self.promoted_piece = promoted_piece
     
     def __str__(self):
         return f"{super().__str__()} -> {type(self.promotion_piece).__name__}"
@@ -252,10 +255,18 @@ class Pawn(Piece):
         for move in list(moves):
             if move.to[1] == 0 or move.to[1] == 7:
                 # Bauern können in Damen, Türmen, Läufern und Springer umwandeln
-                moves.append(Promotion_Move(move.fr, move.to, Queen(self.color)))
-                moves.append(Promotion_Move(move.fr, move.to, Rook(self.color)))
-                moves.append(Promotion_Move(move.fr, move.to, Bishop(self.color)))
-                moves.append(Promotion_Move(move.fr, move.to, Knight(self.color)))
+                queen_move = Promotion_Move(move.fr, move.to, Queen(self.color), self)
+                queen_move.captured = move.captured
+                moves.append(queen_move)
+                rook_move = Promotion_Move(move.fr, move.to, Rook(self.color), self)
+                rook_move.captured = move.captured
+                moves.append(rook_move)
+                bishop_move = Promotion_Move(move.fr, move.to, Bishop(self.color), self)
+                bishop_move.captured = move.captured
+                moves.append(bishop_move)
+                knight_move = Promotion_Move(move.fr, move.to, Knight(self.color), self)
+                knight_move.captured = move.captured
+                moves.append(knight_move)
 
                 # entferne den alten Zug
                 moves.remove(move)
@@ -643,6 +654,7 @@ class Board:
         self.board[move.to[0]][move.to[1]].moved = True
         self.board[move.fr[0]][move.fr[1]] = None
         self.pieces[self.board[move.to[0]][move.to[1]]] = move.to
+        self.turn = 1 - self.turn
         
         if move.captured != None:
             self.pieces.pop(move.captured)
@@ -670,8 +682,9 @@ class Board:
         self.board[move.fr[0]][move.fr[1]].moved = not move.first_move
         self.board[move.to[0]][move.to[1]] = None
         self.pieces[self.board[move.fr[0]][move.fr[1]]] = move.fr
+        self.turn = 1 - self.turn
 
-        if move.captured != None:
+        if move.captured != None and not isinstance(move, En_Passant_Move):
             self.board[move.to[0]][move.to[1]] = move.captured
             self.pieces[move.captured] = move.to
         
@@ -682,18 +695,74 @@ class Board:
             self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = None
             self.pieces[self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]] = move.castling_rook_fr
         elif isinstance(move, Promotion_Move):
-            new_pawn = Pawn(move.promotion_piece.color)
-            new_pawn.moved = True
-            self.board[move.fr[0]][move.fr[1]] = new_pawn
-            self.board[move.to[0]][move.to[1]] = None
-            self.pieces[new_pawn] = move.fr
+            self.board[move.fr[0]][move.fr[1]] = move.promoted_piece
+            if move.captured == None:
+                self.board[move.to[0]][move.to[1]] = None
+            self.pieces[move.promoted_piece] = move.fr
             self.pieces.pop(move.promotion_piece)
         elif isinstance(move, En_Passant_Move):
-            new_pawn = Pawn(move.captured.color)
-            new_pawn.moved = True
-            new_pawn.advanced_two_last_move = True
-            self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = new_pawn
-            self.pieces[new_pawn] = move.en_passant_pos
+            self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = move.captured
+            self.pieces[move.captured] = move.en_passant_pos
+
+class Computer_Player:
+    # Quelle : 
+    # Vazquez-Fernandez, E. et al. (2011) ‘An evolutionary algorithm for tuning a chess evaluation function’, in 2011 IEEE Congress of Evolutionary Computation (CEC). [Online]. 2011 IEEE. pp. 842–848.
+    piece_value = {
+        King :      0,
+        Pawn :      100,
+        Knight :    311,
+        Bishop :    325,
+        Rook :      515,
+        Queen :     842
+    }
+    mobility_value = 5.6
+
+    def __init__(self):
+        self.curr_depth = 0
+        self.best_move = None
+
+    def evaluate(self, board : Board, color : int) -> float:
+        value = 0
+
+        for piece in board.pieces.keys():
+            if piece.color == color:
+                value += self.piece_value[type(piece)]
+            else:
+                value -= self.piece_value[type(piece)]
+            
+        value += self.mobility_value * len(board.get_legitimate_moves(color))
+
+        return value
+
+    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float):
+        if depth == 0:
+            return self.evaluate(board, board.turn)
+        
+        moves = board.get_legitimate_moves(board.turn)
+        if len(moves) == 0:
+            return -inf
+        
+        max_val = alpha
+        for move in moves:
+            board.do_move(move)
+            val = -self.alpha_beta(board, depth - 1, -beta, -max_val)
+            board.undo_move(move)
+            if val > max_val:
+                max_val = val
+
+                if depth == self.curr_depth:
+                    self.best_move = move
+
+                if max_val >= beta:
+                    return max_val
+        
+        return max_val
+    
+    def get_move(self, board : Board, depth : int = 4) -> Move:
+        self.curr_depth = depth
+        self.alpha_beta(board, depth, -inf, inf)
+        return self.best_move
+        
 
 b = Board()
 
@@ -707,10 +776,9 @@ midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
 endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 
 start = int(round(time.time() * 1000000))
-moves = b.get_legitimate_moves(0)
+cp = Computer_Player()
+move = cp.get_move(starting_board, 4)
+print(move)
 end = int(round(time.time() * 1000000))
 
-print(f"{len(moves)} legitime Züge in {end - start}µs generiert")
-
-for move in moves:
-    print(move)
+print(f"Zug generiert nach {end - start}µs")
