@@ -803,6 +803,8 @@ class Computer_Player:
 
         return value
     
+    # sortiert die Züge
+    # Züge, in denen eine Figur mit niedrigem Wert eine Figur mit hohem Wert schlägt werden vorsortiert
     def sort_moves(self, moves : list, board : Board):
         capturing_moves = []
         non_capturing_moves = []
@@ -817,20 +819,33 @@ class Computer_Player:
 
         return capturing_moves + non_capturing_moves
 
-    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float) -> float:        
+    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float) -> float:
+        # überprüfe, ob die Spielposition in der Transpositionstabelle enthalten ist
         if board.__hash__() in self.transposition_table:
             tt_entry = self.transposition_table[board.__hash__()]
+            # der Eintrag in der Transpositionstabelle kann nur verwendet werden,
+            # wenn die Suchtiefe nach dem Eintrag größer oder gleich der Suchtiefe ist,
+            # mit der dieser Knoten noch bewertet werden soll
             if tt_entry.depth >= depth:
+                # Wenn der Eintrag in der Transpositionstabelle ein exakter Eintrag ist,
+                # dann wurden alle Kinder bewertet und wir wissen, dass das die tatsächliche Bewertung ist
                 if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
                     return tt_entry.value
+                # Wenn der Eintrag lower bound ist, dann wurde diese Spielposition nicht zuende bewertet,
+                # weil dieser Knoten durch die Beta-Bedingung abgeschnitten wurde und das wird hier auch passieren
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
                     if tt_entry.value > alpha:
-                        alpha = tt_entry.value
+                        beta = tt_entry.value
+                # Wenn dieser Eintrag upper bound ist, dann kann die tatsächliche Bewertung niedriger sein aber nie höher
+                # als der in der Transpositionstabelle gespeicherte Wert
+                # Der gespeicherte Wert ist die Bewertung der bestmöglichen Alternative die der momentane Spieler garantiert erzwingen kann
+                # und ist daher der Alpha-Wert
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
                     if tt_entry.value < beta:
-                        beta = tt_entry.value
-
-                if alpha >= beta:
+                        alpha = tt_entry.value
+                
+                # Wenn sich Alpha und Beta überschneiden, dann ist die Bewertung des aktuellen Knotens nicht mehr relevant
+                if alpha <= beta:
                     return tt_entry.value
         
         if depth == 0:
@@ -848,15 +863,18 @@ class Computer_Player:
 
         tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
 
+        # simuliere alle möglichen Züge
         for move in self.sort_moves(moves, board):
             board.do_move(move)
             val = -self.alpha_beta(board, depth - 1, -beta, -alpha)
             board.undo_move(move)
 
+            # Beta-Schnitt
             if val >= beta:
                 self.transposition_table[board.__hash__()] = Transposition_Table_Entry(depth, beta, Transposition_Table_Entry_Type.LOWER_BOUND)
                 return beta
 
+            # Wir konnten mit diesem Zug das Alpha verbessern
             if val > alpha:
                 tt_type = Transposition_Table_Entry_Type.EXACT
                 alpha = val
@@ -864,13 +882,14 @@ class Computer_Player:
                 if depth == self.curr_depth:
                     self.best_move = move
             
+        # Eintrag in die Transpositionstabelle hinzufügen
         self.transposition_table[board.__hash__()] = Transposition_Table_Entry(depth, alpha, tt_type)
 
         return alpha
     
     def get_move(self, board : Board, depth : int = 4) -> Move:
         self.curr_depth = depth
-        self.alpha_beta(board, depth, -inf, inf)
+        print(self.alpha_beta(board, depth, -inf, inf))
         return self.best_move
         
 
@@ -888,7 +907,7 @@ endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(midgame_board, 4)
+move = cp.get_move(endgame_board, 4)
 end = int(round(time.time() * 1000000))
 
 print(move)
