@@ -1,5 +1,6 @@
 from math import inf
 from uuid import uuid4
+from enum import Enum
 
 # Klasse, die einen regulären Schachzug kapselt
 class Move:
@@ -758,6 +759,17 @@ class Board:
             self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = move.captured
             self.pieces[move.captured] = move.en_passant_pos
 
+class Transposition_Table_Entry_Type(Enum):
+    EXACT = 0
+    LOWER_BOUND = 1
+    UPPER_BOUND = 2
+
+class Transposition_Table_Entry:
+    def __init__(self, depth : int, value : int, entry_type : Transposition_Table_Entry_Type):
+        self.depth = depth
+        self.value = value
+        self.entry_type = entry_type
+
 class Computer_Player:
     # Quelle : 
     # Vazquez-Fernandez, E. et al. (2011) ‘An evolutionary algorithm for tuning a chess evaluation function’, in 2011 IEEE Congress of Evolutionary Computation (CEC). [Online]. 2011 IEEE. pp. 842–848.
@@ -776,6 +788,7 @@ class Computer_Player:
         self.best_move = None
         self.transposition_table = {}
 
+    # führt eine statische Evaluation des Spielfeldes durch
     def evaluate(self, board : Board, color : int) -> float:
         value = 0
 
@@ -786,66 +799,53 @@ class Computer_Player:
                 value -= self.piece_value[type(piece)]
             
         value += self.mobility_value * len(board.get_legitimate_moves(color))
+        value -= self.mobility_value * len(board.get_legitimate_moves(1 - color))
 
         return value
     
     def sort_moves(self, moves : list, board : Board):
-        queen_moves = []
-        rook_moves = []
-        bishop_moves = []
-        knight_moves = []
-        pawn_moves = []
-        king_moves = []
+        capturing_moves = []
+        non_capturing_moves = []
 
         for move in moves:
-            if isinstance(board.board[move.fr[0]][move.fr[1]], Queen):
-                queen_moves.append(move)
-            elif isinstance(board.board[move.fr[0]][move.fr[1]], Rook):
-                rook_moves.append(move)
-            elif isinstance(board.board[move.fr[0]][move.fr[1]], Bishop):
-                bishop_moves.append(move)
-            elif isinstance(board.board[move.fr[0]][move.fr[1]], Knight):
-                knight_moves.append(move)
-            elif isinstance(board.board[move.fr[0]][move.fr[1]], Pawn):
-                pawn_moves.append(move)
-            elif isinstance(board.board[move.fr[0]][move.fr[1]], King):
-                king_moves.append(move)
+            if move.captured != None:
+                capturing_moves.append(move)
+            else:
+                non_capturing_moves.append(move)
+        
+        capturing_moves.sort(key=lambda move : self.piece_value[type(move.captured)] - self.piece_value[type(board.board[move.fr[0]][move.fr[1]])], reverse=True)
 
+        return capturing_moves + non_capturing_moves
 
-        return queen_moves + rook_moves + bishop_moves + knight_moves + pawn_moves + king_moves
-
-    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float):
-        # Wenn die Spielposition in der Transposition-Tabelle vorhanden ist, dann wird diese zurückgegeben
-        if board in self.transposition_table:
-            return self.transposition_table[board]
-
+    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float) -> float:        
         if depth == 0:
-            val = self.evaluate(board, board.turn)
-             # füge den Evaluationswert in die Transpositionstabelle ein
-            self.transposition_table[board] = val
-            return val
+            return self.evaluate(board, board.turn)
         
         moves = board.get_legitimate_moves(board.turn)
         if len(moves) == 0:
+            king = [x for x in board.pieces.keys() if isinstance(x, King) and x.color == board.turn][0]
+            enemy_pieces = [x for x in board.pieces.keys() if x.color != board.turn]
+            # Wenn der ein Spieler keine legitimen Züge hat und nicht im Schach steht ist Patt
+            if not any(x.attacks_square(board.pieces[king], board.board, board.pieces[x]) for x in enemy_pieces):
+                return 0
+
             return -inf
-        
-        max_val = alpha
+
         for move in self.sort_moves(moves, board):
             board.do_move(move)
-            val = -self.alpha_beta(board, depth - 1, -beta, -max_val)
+            val = -self.alpha_beta(board, depth - 1, -beta, -alpha)
             board.undo_move(move)
-            if val > max_val:
-                max_val = val
+
+            if val >= beta:
+                return beta
+
+            if val > alpha:
+                alpha = val
 
                 if depth == self.curr_depth:
                     self.best_move = move
 
-                if max_val >= beta:
-                    return max_val
-        
-         # füge den Evaluationswert in die Transpositionstabelle ein
-        self.transposition_table[board] = max_val
-        return max_val
+        return alpha
     
     def get_move(self, board : Board, depth : int = 4) -> Move:
         self.curr_depth = depth
@@ -867,7 +867,7 @@ endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(midgame_board, 4)
+move = cp.get_move(midgame_board, 3)
 end = int(round(time.time() * 1000000))
 
 print(move)
