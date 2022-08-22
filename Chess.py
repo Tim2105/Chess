@@ -223,6 +223,12 @@ class Pawn(Piece):
         # relevant für En Passant
         self.advanced_two_last_move = False
 
+    def __eq__(self, o):
+        if not type(o) is Pawn:
+            return False
+        
+        return super().__eq__(o) and self.advanced_two_last_move == o.advanced_two_last_move
+
     def get_moves(self, board : list) -> list:
         moves = []
 
@@ -384,7 +390,9 @@ class Rook(Piece):
         return False
     
     def attacks_square_on_empty_board(self, square : tuple):
-        return self.pos[0] == square[0] or self.pos[1] == square[1]
+        col_diff = abs(square[0] - self.pos[0])
+        row_diff = abs(square[1] - self.pos[1])
+        return (col_diff == 0 or row_diff == 0) and col_diff != row_diff
             
 
 # Springer
@@ -492,7 +500,7 @@ class Queen(Piece):
         col_diff = square[0] - self.pos[0]
         row_diff = square[1] - self.pos[1]
 
-        return row_diff == 0 or col_diff == 0 or abs(row_diff) == abs(col_diff)
+        return ((row_diff == 0 or col_diff == 0) and row_diff != col_diff) or abs(row_diff) == abs(col_diff)
 
 # König
 class King(Piece):
@@ -522,7 +530,7 @@ class King(Piece):
 
         # Bedingung 1
         if not self.moved:
-            enemy_pieces = {board[i][j] : (i, j) for i in range(8) for j in range(8) if board[i][j] != None and board[i][j].color != self.color}
+            enemy_pieces = [board[i][j] for i in range(8) for j in range(8) if board[i][j] != None and board[i][j].color != self.color]
             if self.color == 0:
                 if self.pos == (4, 0):
                     left_corner_piece = board[0][0]
@@ -572,7 +580,7 @@ class King(Piece):
         col_diff = abs(square[0] - self.pos[0])
         row_diff = abs(square[1] - self.pos[1])
 
-        return row_diff <= 1 and col_diff <= 1
+        return (row_diff <= 1 and col_diff <= 1) and (row_diff == 1 or col_diff == 1)
     
     def attacks_square_on_empty_board(self, square : tuple):
         return self.attacks_square(square, None)
@@ -738,7 +746,7 @@ class Board:
                     self.board[col][row] = Queen(color, (col, row))
                 elif char == 'r':
                     self.board[col][row] = Rook(color, (col, row))
-                    if not (color == 0 and row == 0 and col in [0, 7] or color == 1 and row == 7 and col in [0, 7]):
+                    if not ((color == 0 and row == 0 and col in [0, 7]) or (color == 1 and row == 7 and col in [0, 7])):
                         self.board[col][row].moved = True
                 elif char == 'b':
                     self.board[col][row] = Bishop(color, (col, row))
@@ -746,7 +754,7 @@ class Board:
                     self.board[col][row] = Knight(color, (col, row))
                 elif char == 'p':
                     self.board[col][row] = Pawn(color, (col, row))
-                    if not (color == 0 and row == 1 or color == 1 and row == 6):
+                    if not ((color == 0 and row == 1) or (color == 1 and row == 6)):
                         self.board[col][row].moved = True
                 else:
                     raise ValueError("Invalid FEN-String: Invalid character during position parsing")
@@ -851,7 +859,12 @@ class Board:
 
                 # Wenn der König bewegt wurde, müssen alle gegnerischen Figuren betrachtet werden
                 if isinstance(self.board[move.to[0]][move.to[1]], King):
-                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces):
+                    enemy_pieces_copy = []
+                    if move.captured != None:
+                        enemy_pieces_copy = [x for x in enemy_pieces if x != move.captured]
+                    else:
+                        enemy_pieces_copy = enemy_pieces
+                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces_copy):
                         moves.append(move)
                 else:
                     if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers):
@@ -866,14 +879,14 @@ class Board:
         if self.board[move.fr[0]][move.fr[1]] == None:
             raise ValueError("Piece does not exist")
 
+        if move.captured != None:
+            self.pieces.remove(move.captured)
+
         self.board[move.to[0]][move.to[1]] = self.board[move.fr[0]][move.fr[1]]
         self.board[move.to[0]][move.to[1]].moved = True
         self.board[move.fr[0]][move.fr[1]] = None
         self.board[move.to[0]][move.to[1]].pos = move.to
         self.turn = 1 - self.turn
-        
-        if move.captured != None:
-            self.pieces.remove(move.captured)
         
         if isinstance(move, Pawn_Double_Move):
             self.board[move.to[0]][move.to[1]].advanced_two_last_move = True
@@ -913,7 +926,7 @@ class Board:
         self.board[move.fr[0]][move.fr[1]].pos = move.fr
         self.turn = 1 - self.turn
 
-        if move.captured != None:
+        if move.captured != None and not isinstance(move, En_Passant_Move):
             self.board[move.to[0]][move.to[1]] = move.captured
             move.captured.pos = move.to
             self.pieces.append(move.captured)
@@ -933,6 +946,7 @@ class Board:
             self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = move.captured
             move.captured.pos = move.en_passant_pos
             move.captured.advanced_two_last_move = True
+            self.pieces.append(move.captured)
         
         self.move_history.pop()
 
@@ -1051,6 +1065,8 @@ class Computer_Player:
         self.last_search_principal_variation = []
         self.last_search_interrupted = False
         self.nodes_visited = 0
+        self.transpositions = 0
+        self.i = 0
 
     def get_pst_value(self, piece : Piece, use_endgame_values = False) -> float:
         if piece == None:
@@ -1069,7 +1085,9 @@ class Computer_Player:
     
     # SEE - Static Exchange Evaluation
     # Überprüft eine Abfolge von Schlägen auf demselben Feld(immer mit der niedrigstmöglichen Figur)
-    # und gibt die Veränderung im Material zurück(- -> verloren, + -> gewonnen)
+    # und gibt die Veränderung im Material zurück(- -> verloren, + -> gewonnen oder 0)
+    # tatsächlich gibt SEE nie eine negative Zahl zurück, weil der momentane Spieler die Schlagkette nicht anfangen muss,
+    # wenn er verlieren würde : SEE gibt in diesem Fall 0 zurück
     # Quelle : https://www.researchgate.net/publication/298853351_STATIC_EXCHANGE_EVALUATION_WITH_alpha_beta-APPROACH
     def see(self, board : Board, pos : tuple) -> float:
         # SEE funktioniert nur auf Feldern wo eine Figur des Spielers steht,
@@ -1080,6 +1098,7 @@ class Computer_Player:
         value = 0
 
         own_pieces = [piece for piece in board.pieces if piece.color == board.turn]
+
         smallest_piece = None
         for piece in own_pieces:
             if piece.attacks_square(pos, board.board):
@@ -1139,16 +1158,6 @@ class Computer_Player:
         
         for piece in other_pieces:
             value -= self.get_pst_value(piece, endgame)
-        
-        if last_move != None:
-            last_moved_piece = board.board[last_move.to[0]][last_move.to[1]]
-            captured_piece = last_move.captured
-
-            captured_piece_val = 0
-            if captured_piece != None:
-                captured_piece_val = self.piece_value[type(captured_piece)] + self.get_pst_value(captured_piece, endgame)
-            
-            value += self.see(board, last_move.to) - captured_piece_val
 
         return value
 
@@ -1186,6 +1195,8 @@ class Computer_Player:
 
 
     def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float, principal_variation : list) -> float:
+        self.nodes_visited += 1
+        
         # überprüfe, ob die Spielposition in der Transpositionstabelle enthalten ist
         if board.__hash__() in self.transposition_table:
             tt_entry = self.transposition_table[board.__hash__()]
@@ -1193,6 +1204,7 @@ class Computer_Player:
             # wenn die Suchtiefe nach dem Eintrag größer oder gleich der Suchtiefe ist,
             # mit der dieser Knoten noch bewertet werden soll
             if tt_entry.depth >= depth:
+                self.transpositions += 1
                 # Wenn der Eintrag in der Transpositionstabelle ein exakter Eintrag ist,
                 # dann wurden alle Kinder bewertet und wir wissen, dass das die tatsächliche Bewertung ist
                 if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
@@ -1211,8 +1223,6 @@ class Computer_Player:
                 # Wenn sich Alpha und Beta überschneiden, dann ist die Bewertung des aktuellen Knotens nicht mehr relevant
                 if alpha >= beta:
                     return tt_entry.value
-        
-        self.nodes_visited += 1
 
         if depth == 0:
             if len(board.move_history) == 0:
@@ -1222,18 +1232,30 @@ class Computer_Player:
 
         tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
 
+        b = beta
+        i = 0
+
         # simuliere alle möglichen Züge
         for move in self.order_moves(board.get_legitimate_moves(board.turn), board, depth):
+            i += 1
             board.do_move(move)
             child_pv = []
-            val = -self.alpha_beta(board, depth - 1, -beta, -alpha, child_pv)
+            val = -self.alpha_beta(board, depth - 1, -b, -alpha, child_pv)
+
+            if val > alpha and val < beta and i > 1 and depth > 1:
+                child_pv = []
+                val = -self.alpha_beta(board, depth - 1, -beta, -val, child_pv)
+
             board.undo_move(move)
 
             # Beta-Schnitt
             if val >= beta:
                 self.transposition_table[board.__hash__()] = Transposition_Table_Entry(beta, depth, Transposition_Table_Entry_Type.LOWER_BOUND)
-                self.killer_moves[depth - 1][0] = self.killer_moves[depth - 1][1]
-                self.killer_moves[depth - 1][1] = move
+
+                # Speichere Killer-Move ab
+                if move.captured == None:
+                    self.killer_moves[depth - 1][0] = self.killer_moves[depth - 1][1]
+                    self.killer_moves[depth - 1][1] = move
                 return beta
 
             # Wir konnten mit diesem Zug das Alpha verbessern
@@ -1249,6 +1271,8 @@ class Computer_Player:
                 self.last_search_interrupted = True
                 return alpha
             
+            b = alpha + 1
+            
         # Eintrag in die Transpositionstabelle hinzufügen
         tt_entry = Transposition_Table_Entry(alpha, depth, tt_type)
         self.transposition_table[board.__hash__()] = tt_entry
@@ -1263,6 +1287,7 @@ class Computer_Player:
     def get_move(self, board : Board, search_time : float = 4, depth_incr : int = 1) -> Move:
         self.curr_depth = 0
         self.nodes_visited = 0
+        self.transpositions = 0
         self.searching = True
         self.last_search_interrupted = False
         self.last_depth_principal_variation = []
@@ -1272,8 +1297,6 @@ class Computer_Player:
 
         while self.searching:
             self.curr_depth += depth_incr
-            
-            self.last_depth_principal_variation += [None] * (self.curr_depth - len(self.last_depth_principal_variation))
             self.killer_moves = [[None, None]] * (self.curr_depth - len(self.killer_moves)) + self.killer_moves
 
             pv = []
@@ -1281,7 +1304,7 @@ class Computer_Player:
             self.alpha_beta(board, self.curr_depth, -inf, inf, pv)
 
             if not self.last_search_interrupted:
-                print("Depth: " + str(self.curr_depth) + " | Nodes visited: " + str(self.nodes_visited))
+                print(f"Depth: {self.curr_depth} | Nodes visited: {self.nodes_visited} | Transpositions: {self.transpositions}")
                 self.last_depth_principal_variation = pv
             
             self.best_move = self.last_depth_principal_variation[0] if len(self.last_depth_principal_variation) > 0 else None
@@ -1310,7 +1333,7 @@ endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(endgame_board)
+move = cp.get_move(midgame_board)
 end = int(round(time.time() * 1000000))
 
 print(f"Zug generiert nach {end - start}µs")
