@@ -154,12 +154,15 @@ class Piece:
         raise NotImplementedError("get_moves not implemented on " + str(type(self)))
 
     # überprüft, ob diese Figur auf von einem Feld auf ein anderes Feld ziehen kann und es somit "angreift"
-    def attacks_square(self, square: tuple, board : list) -> bool:
+    def attacks_square(self, square : tuple, board : list) -> bool:
         for move in self.get_moves(board):
             if move.to == square:
                 return True
         
         return False
+    
+    def attacks_square_on_empty_board(self, square : tuple) -> bool:
+        raise NotImplementedError("attacks_square_on_empty_board not implemented on " + str(type(self)))
 
 # Klasse, die einen Rochadenzug kapselt
 class Castling_Move(Move):
@@ -340,6 +343,9 @@ class Pawn(Piece):
                 return True
         
         return False
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        return self.attacks_square(square, None)
 
 # Turm
 class Rook(Piece):
@@ -376,6 +382,9 @@ class Rook(Piece):
                 return True
         
         return False
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        return self.pos[0] == square[0] or self.pos[1] == square[1]
             
 
 # Springer
@@ -403,10 +412,13 @@ class Knight(Piece):
         return moves
     
     def attacks_square(self, square : tuple, board : list):
-        row_diff = abs(square[0] - self.pos[0])
-        col_diff = abs(square[1] - self.pos[1])
+        col_diff = abs(square[0] - self.pos[0])
+        row_diff = abs(square[1] - self.pos[1])
 
         return row_diff == 2 and col_diff == 1 or row_diff == 1 and col_diff == 2
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        return self.attacks_square(square, None)
 
 # Läufer
 class Bishop(Piece):
@@ -414,18 +426,21 @@ class Bishop(Piece):
         return self.get_diagonal_moves(board)
     
     def attacks_square(self, square : tuple, board : list):
-        row_diff = square[0] - self.pos[0]
-        col_diff = square[1] - self.pos[1]
+        col_diff = square[0] - self.pos[0]
+        row_diff = square[1] - self.pos[1]
 
         # überprüfe, ob das zu überprüfende Feld in derselben Diagonale liegt
         if abs(row_diff) == abs(col_diff):
             for i in range(1, abs(row_diff)):
                 # überprüfe, ob eine Figur zwischen beiden Feldern steht
-                if board[self.pos[0] + i * row_diff // abs(row_diff)][self.pos[1] + i * col_diff // abs(col_diff)] != None:
+                if board[self.pos[0] + i * col_diff // abs(col_diff)][self.pos[1] + i * row_diff // abs(row_diff)] != None:
                     return False
             return True
 
         return False
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        return abs(square[0] - self.pos[0]) == abs(square[1] - self.pos[1])
 
 # Dame
 class Queen(Piece):
@@ -472,6 +487,12 @@ class Queen(Piece):
             return True
         
         return False
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        col_diff = square[0] - self.pos[0]
+        row_diff = square[1] - self.pos[1]
+
+        return row_diff == 0 or col_diff == 0 or abs(row_diff) == abs(col_diff)
 
 # König
 class King(Piece):
@@ -551,7 +572,10 @@ class King(Piece):
         col_diff = abs(square[0] - self.pos[0])
         row_diff = abs(square[1] - self.pos[1])
 
-        return row_diff <= 1 and col_diff <= 1 and (row_diff != 0 or col_diff != 0)
+        return row_diff <= 1 and col_diff <= 1
+    
+    def attacks_square_on_empty_board(self, square : tuple):
+        return self.attacks_square(square, None)
 
 # Stellt ein Schachbrett dar
 # kann Züge generieren auf das Schachbrett ausführen
@@ -814,10 +838,26 @@ class Board:
     def get_legitimate_moves(self, color : int) -> list:
         moves = []
 
+        king = [x for x in self.pieces if isinstance(x, King) and x.color == self.turn][0]
         own_pieces = [x for x in self.pieces if x.color == color]
+        enemy_pieces = [x for x in self.pieces if x.color != color]
+
+        # Es reicht i.d.R., die gegnerischen Figuren zu betrachten, die den Köing auf einem sonst leeren Feld in Schach stellen
+        potential_enemy_attackers = [x for x in self.pieces if x.color != color and x.attacks_square_on_empty_board(king.pos)]
 
         for piece in own_pieces:
-            moves += self.get_legitimate_moves_from_piece(piece)
+            for move in piece.get_moves(self.board):
+                self.do_move(move)
+
+                # Wenn der König bewegt wurde, müssen alle gegnerischen Figuren betrachtet werden
+                if isinstance(self.board[move.to[0]][move.to[1]], King):
+                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces):
+                        moves.append(move)
+                else:
+                    if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers):
+                        moves.append(move)
+
+                self.undo_move(move)
             
         return moves
     
@@ -1089,7 +1129,7 @@ class Computer_Player:
                 if isinstance(piece, (Knight, Bishop)):
                     other_minor_pieces += 1
         
-        endgame = own_queens == 0 and other_queens == 0 or own_minor_pieces <= 1 and other_minor_pieces <= 1
+        endgame = (own_queens == 0 and other_queens == 0) or (own_minor_pieces <= 1 and other_minor_pieces <= 1)
 
         own_pieces = [piece for piece in board.pieces if piece.color == color]
         other_pieces = [piece for piece in board.pieces if piece.color != color]
@@ -1143,32 +1183,6 @@ class Computer_Player:
                 moves_copy.remove(move)
         
         return pv_moves + winning_captures + killer_moves + moves_copy + losing_captures
-    
-    # führt den Alpha-Beta Algorithmus mit nur Schlagzügen und unendlicher Tiefe weiter
-    # Unterscheidet sich insofern von SEE, dass diese Suche sich alle möglichen Schlagzüge anguckt,
-    # und nicht nur Züge auf die Position der letzten bewegten Figur
-    def alpha_beta_only_captures(self, board : Board, alpha : float, beta : float) -> float:
-        # Schlagzüge sind in der Regel nicht erzwungen
-        val = self.evaluate(board, board.turn)
-        if val >= beta:
-            return beta
-        
-        if val > alpha:
-            alpha = val
-        
-        moves = [x for x in board.get_moves(board.turn) if x.captured != None]
-
-        for move in self.order_moves(moves, board, 0):
-            board.do_move(move)
-            val = -self.alpha_beta_only_captures(board, -beta, -alpha)
-            board.undo_move(move)
-            if val >= beta:
-                return beta
-            
-            if val > alpha:
-                alpha = val
-        
-        return alpha
 
 
     def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float, principal_variation : list) -> float:
@@ -1185,14 +1199,14 @@ class Computer_Player:
                     principal_variation.clear()
                     principal_variation.extend(tt_entry.principal_variation)
                     return tt_entry.value
-                # Dieser Knoten wurde letztes mal vollständig bewertet, jedoch konnte alpha nicht verbessert werden
-                elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
-                    if tt_entry.value > alpha:
-                        alpha = tt_entry.value
                 # Dieser Knoten wurde letztes mal durch die Beta-Bedingung abgeschnitten
-                elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
-                    if tt_entry.value < beta:
+                elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
+                    if tt_entry.value >= beta:
                         beta = tt_entry.value
+                # Dieser Knoten wurde letztes mal vollständig bewertet, jedoch konnte alpha nicht verbessert werden
+                elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
+                    if tt_entry.value <= alpha:
+                        alpha = tt_entry.value
                 
                 # Wenn sich Alpha und Beta überschneiden, dann ist die Bewertung des aktuellen Knotens nicht mehr relevant
                 if alpha >= beta:
@@ -1296,7 +1310,7 @@ endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(midgame_board)
+move = cp.get_move(endgame_board)
 end = int(round(time.time() * 1000000))
 
 print(f"Zug generiert nach {end - start}µs")
