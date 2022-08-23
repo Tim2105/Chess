@@ -1,8 +1,7 @@
-from math import inf
 from uuid import uuid4
 from enum import Enum
 from threading import Timer
-from bisect import insort
+from copy import copy
 
 # Klasse, die einen regulären Schachzug kapselt
 class Move:
@@ -20,7 +19,7 @@ class Move:
         if not type(o) is Move:
             return False
         
-        return self.fr == o.fr and self.to == o.to and self.first_move == o.first_move and type(self.captured) == type(o.captured)
+        return self.fr == o.fr and self.to == o.to and self.first_move == o.first_move and self.captured == o.captured
 
 # Oberklasse für alle Figuren
 class Piece:
@@ -31,15 +30,6 @@ class Piece:
         self.color = color
         self.pos = pos
         self.moved = False
-    
-    def __hash__(self):
-        val = 0
-        val += self.color
-        val += self.pos[0] << 1
-        val += self.pos[1] << 4
-        val += int(self.moved) << 7
-
-        return val
     
     def __eq__(self, o):
         if not type(self) is type(o):
@@ -187,7 +177,7 @@ class En_Passant_Move(Move):
         if not type(o) is En_Passant_Move:
             return False
         
-        return self.fr == o.fr and self.to == o.to and self.en_passant_pos == o.en_passant_pos
+        return self.fr == o.fr and self.to == o.to and self.en_passant_pos == o.en_passant_pos and self.captured == o.captured
 
 # Klasse, die eine Bauernaufwertung kapselt
 class Promotion_Move(Move):
@@ -203,7 +193,7 @@ class Promotion_Move(Move):
         if not type(o) is Promotion_Move:
             return False
         
-        return self.fr == o.fr and self.to == o.to and type(self.promotion_piece) == type(o.promotion_piece) and type(self.captured) == type(o.captured)
+        return self.fr == o.fr and self.to == o.to and type(self.promotion_piece) == type(o.promotion_piece) and self.captured == o.captured
 
 # Klasse, die einen Doppelzug eines Bauern kapselt
 class Pawn_Double_Move(Move):
@@ -224,10 +214,10 @@ class Pawn(Piece):
         self.advanced_two_last_move = False
 
     def __eq__(self, o):
-        if not type(o) is Pawn:
+        if not type(self) is type(o):
             return False
         
-        return super().__eq__(o) and self.advanced_two_last_move == o.advanced_two_last_move
+        return self.color == o.color and self.pos == o.pos and self.moved == o.moved and self.advanced_two_last_move == o.advanced_two_last_move
 
     def get_moves(self, board : list) -> list:
         moves = []
@@ -312,7 +302,7 @@ class Pawn(Piece):
 
         # Mache aus allen Umwandlungen Promotion_Moves
         # iteriere über eine Kopie aller Züge, damit wir die Originalliste verändern können
-        for move in list(moves):
+        for move in moves.copy():
             if move.to[1] == 0 or move.to[1] == 7:
                 # Bauern können in Damen, Türmen, Läufern und Springer umwandeln
                 queen_move = Promotion_Move(move.fr, move.to, Queen(self.color, move.to), self)
@@ -413,7 +403,8 @@ class Knight(Piece):
                     move.captured = board[self.pos[0] + direction[0]][self.pos[1] + direction[1]]
                     moves.append(move)
                 continue
-            moves.append(Move(self.pos, (self.pos[0] + direction[0], self.pos[1] + direction[1])))
+            else:
+                moves.append(Move(self.pos, (self.pos[0] + direction[0], self.pos[1] + direction[1])))
         
         self.set_first_move_in_list(moves)
 
@@ -594,6 +585,9 @@ class Board:
 
         # Initialisiere die Figuren
         self.read_fen_string(fen_string)
+
+        global global_id
+        global_id = id(self.board[2][5])
         
         self.pieces = []
         for x in range(8):
@@ -819,6 +813,12 @@ class Board:
             moves += piece.get_moves(self.board)
         
         return moves
+    
+    def is_in_check(self, color : int) -> bool:
+        king = [x for x in self.pieces if isinstance(x, King) and x.color == color][0]
+        enemy_pieces = [x for x in self.pieces if x.color != color]
+
+        return any(x.attacks_square(king.pos, self.board) for x in enemy_pieces)
 
     def get_legitimate_moves_from_piece(self, piece : Piece) -> list:
         if not piece in self.pieces:
@@ -881,19 +881,18 @@ class Board:
 
         if move.captured != None:
             self.pieces.remove(move.captured)
-
+        
         self.board[move.to[0]][move.to[1]] = self.board[move.fr[0]][move.fr[1]]
-        self.board[move.to[0]][move.to[1]].moved = True
         self.board[move.fr[0]][move.fr[1]] = None
         self.board[move.to[0]][move.to[1]].pos = move.to
-        self.turn = 1 - self.turn
-        
+        self.board[move.to[0]][move.to[1]].moved = True
+
         if isinstance(move, Pawn_Double_Move):
             self.board[move.to[0]][move.to[1]].advanced_two_last_move = True
         elif isinstance(move, Castling_Move):
             self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]
             self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = None
-            self.board[move.castling_rook_to[0]][move.castling_rook_to[1]].pos = move.castling_rook_to
+            self.pieces[self.board[move.castling_rook_to[0]][move.castling_rook_to[1]]] = move.castling_rook_to
         elif isinstance(move, Promotion_Move):
             self.board[move.to[0]][move.to[1]] = move.promotion_piece
             move.promotion_piece.pos = move.to
@@ -910,6 +909,8 @@ class Board:
                     break
         
         self.move_history.append(move)
+
+        self.turn = 1 - self.turn
     
     # macht einen Zug rückgängig
     def undo_move(self, move : Move):
@@ -921,12 +922,11 @@ class Board:
             self.board[pos[0]][pos[1]].advanced_two_last_move = True
 
         self.board[move.fr[0]][move.fr[1]] = self.board[move.to[0]][move.to[1]]
-        self.board[move.fr[0]][move.fr[1]].moved = not move.first_move
         self.board[move.to[0]][move.to[1]] = None
         self.board[move.fr[0]][move.fr[1]].pos = move.fr
-        self.turn = 1 - self.turn
+        self.board[move.fr[0]][move.fr[1]].moved = not move.first_move
 
-        if move.captured != None and not isinstance(move, En_Passant_Move):
+        if move.captured != None:
             self.board[move.to[0]][move.to[1]] = move.captured
             move.captured.pos = move.to
             self.pieces.append(move.captured)
@@ -950,10 +950,13 @@ class Board:
         
         self.move_history.pop()
 
+        self.turn = 1 - self.turn
+
 class Transposition_Table_Entry_Type(Enum):
     EXACT = 0
     LOWER_BOUND = 1
     UPPER_BOUND = 2
+    QUIESCENT = 3
 
 class Transposition_Table_Entry:
     def __init__(self, value : int, depth: int, entry_type : Transposition_Table_Entry_Type):
@@ -978,64 +981,64 @@ class Computer_Player:
     # Quelle: https://www.chessprogramming.org/Simplified_Evaluation_Function
     pst_midgame = {
         Pawn : [
-            [  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
-            [ 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0],
-            [ 10.0, 10.0, 20.0, 30.0, 30.0, 20.0, 10.0, 10.0],
-            [  5.0,  5.0, 10.0, 25.0, 25.0, 10.0,  5.0,  5.0],
-            [  0.0,  0.0,  0.0, 20.0, 20.0,  0.0,  0.0,  0.0],
-            [  5.0, -5.0,-10.0,  0.0,  0.0,-10.0, -5.0,  5.0],
-            [  5.0, 10.0, 10.0,-20.0,-20.0, 10.0, 10.0,  5.0],
-            [  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
+            [  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 50, 50, 50, 50, 50, 50, 50, 50],
+            [ 10, 10, 20, 30, 30, 20, 10, 10],
+            [  5,  5, 10, 25, 25, 10,  5,  5],
+            [  0,  0,  0, 20, 20,  0,  0,  0],
+            [  5, -5,-10,  0,  0,-10, -5,  5],
+            [  5, 10, 10,-20,-20, 10, 10,  5],
+            [  0,  0,  0,  0,  0,  0,  0,  0]
         ],
         Knight : [
-            [-50.0,-40.0,-30.0,-30.0,-30.0,-30.0,-40.0,-50.0],
-            [-40.0,-20.0,  0.0,  0.0,  0.0,  0.0,-20.0,-40.0],
-            [-30.0,  0.0, 10.0, 15.0, 15.0, 10.0,  0.0,-30.0],
-            [-30.0,  5.0, 15.0, 20.0, 20.0, 15.0,  5.0,-30.0],
-            [-30.0,  0.0, 15.0, 20.0, 20.0, 15.0,  0.0,-30.0],
-            [-30.0,  5.0, 10.0, 15.0, 15.0, 10.0,  5.0,-30.0],
-            [-40.0,-20.0,  0.0,  5.0,  5.0,  0.0,-20.0,-40.0],
-            [-50.0,-40.0,-30.0,-30.0,-30.0,-30.0,-40.0,-50.0]
+            [-50,-40,-30,-30,-30,-30,-40,-50],
+            [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30],
+            [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30],
+            [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40],
+            [-50,-40,-30,-30,-30,-30,-40,-50]
         ],
         Bishop : [
-            [-20.0,-10.0,-10.0,-10.0,-10.0,-10.0,-10.0,-20.0],
-            [-10.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,-10.0],
-            [-10.0,  0.0,  5.0, 10.0, 10.0,  5.0,  0.0,-10.0],
-            [-10.0,  5.0,  5.0, 10.0, 10.0,  5.0,  5.0,-10.0],
-            [-10.0,  0.0, 10.0, 10.0, 10.0, 10.0,  0.0,-10.0],
-            [-10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,-10.0],
-            [-10.0,  5.0,  0.0,  0.0,  0.0,  0.0,  5.0,-10.0],
-            [-20.0,-10.0,-10.0,-10.0,-10.0,-10.0,-10.0,-20.0]
+            [-20,-10,-10,-10,-10,-10,-10,-20],
+            [-10,  0,  0,  0,  0,  0,  0,-10],
+            [-10,  0,  5, 10, 10,  5,  0,-10],
+            [-10,  5,  5, 10, 10,  5,  5,-10],
+            [-10,  0, 10, 10, 10, 10,  0,-10],
+            [-10, 10, 10, 10, 10, 10, 10,-10],
+            [-10,  5,  0,  0,  0,  0,  5,-10],
+            [-20,-10,-10,-10,-10,-10,-10,-20]
         ],
         Rook : [
-            [  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
-            [  5.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,  5.0],
-            [ -5.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -5.0],
-            [ -5.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -5.0],
-            [ -5.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -5.0],
-            [ -5.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -5.0],
-            [ -5.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -5.0],
-            [  0.0,  0.0,  0.0,  5.0,  5.0,  0.0,  0.0,  0.0]
+            [  0,  0,  0,  0,  0,  0,  0,  0],
+            [  5, 10, 10, 10, 10, 10, 10,  5],
+            [ -5,  0,  0,  0,  0,  0,  0, -5],
+            [ -5,  0,  0,  0,  0,  0,  0, -5],
+            [ -5,  0,  0,  0,  0,  0,  0, -5],
+            [ -5,  0,  0,  0,  0,  0,  0, -5],
+            [ -5,  0,  0,  0,  0,  0,  0, -5],
+            [  0,  0,  0,  5,  5,  0,  0,  0]
         ],
         Queen : [
-            [-20.0,-10.0,-10.0, -5.0, -5.0,-10.0,-10.0,-20.0],
-            [-10.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,-10.0],
-            [-10.0,  0.0,  5.0,  5.0,  5.0,  5.0,  0.0,-10.0],
-            [ -5.0,  0.0,  5.0,  5.0,  5.0,  5.0,  0.0, -5.0],
-            [  0.0,  0.0,  5.0,  5.0,  5.0,  5.0,  0.0, -5.0],
-            [-10.0,  5.0,  5.0,  5.0,  5.0,  5.0,  0.0,-10.0],
-            [-10.0,  0.0,  5.0,  0.0,  0.0,  0.0,  0.0,-10.0],
-            [-20.0,-10.0,-10.0, -5.0, -5.0,-10.0,-10.0,-20.0]
+            [-20,-10,-10, -5, -5,-10,-10,-20],
+            [-10,  0,  0,  0,  0,  0,  0,-10],
+            [-10,  0,  5,  5,  5,  5,  0,-10],
+            [ -5,  0,  5,  5,  5,  5,  0, -5],
+            [  0,  0,  5,  5,  5,  5,  0, -5],
+            [-10,  5,  5,  5,  5,  5,  0,-10],
+            [-10,  0,  5,  0,  0,  0,  0,-10],
+            [-20,-10,-10, -5, -5,-10,-10,-20]
         ],
         King : [
-            [-30.0,-40.0,-40.0,-50.0,-50.0,-40.0,-40.0,-30.0],
-            [-30.0,-40.0,-40.0,-50.0,-50.0,-40.0,-40.0,-30.0],
-            [-30.0,-40.0,-40.0,-50.0,-50.0,-40.0,-40.0,-30.0],
-            [-30.0,-40.0,-40.0,-50.0,-50.0,-40.0,-40.0,-30.0],
-            [-20.0,-30.0,-30.0,-40.0,-40.0,-30.0,-30.0,-20.0],
-            [-10.0,-20.0,-20.0,-20.0,-20.0,-20.0,-20.0,-10.0],
-            [ 20.0, 20.0,  0.0,  0.0,  0.0,  0.0, 20.0, 20.0],
-            [ 20.0, 30.0, 10.0,  0.0,  0.0, 10.0, 30.0, 20.0]
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-20,-30,-30,-40,-40,-30,-30,-20],
+            [-10,-20,-20,-20,-20,-20,-20,-10],
+            [ 20, 20,  0,  0,  0,  0, 20, 20],
+            [ 20, 30, 10,  0,  0, 10, 30, 20]
         ]
     }
 
@@ -1046,16 +1049,21 @@ class Computer_Player:
         Rook : pst_midgame[Rook],
         Queen : pst_midgame[Queen],
         King : [
-            [-50.0,-40.0,-30.0,-20.0,-20.0,-30.0,-40.0,-50.0],
-            [-30.0,-20.0,-10.0,  0.0,  0.0,-10.0,-20.0,-30.0],
-            [-30.0,-10.0, 20.0, 30.0, 30.0, 20.0,-10.0,-30.0],
-            [-30.0,-10.0, 30.0, 40.0, 40.0, 30.0,-10.0,-30.0],
-            [-30.0,-10.0, 30.0, 40.0, 40.0, 30.0,-10.0,-30.0],
-            [-30.0,-10.0, 20.0, 30.0, 30.0, 20.0,-10.0,-30.0],
-            [-30.0,-30.0,  0.0,  0.0,  0.0,  0.0,-30.0,-30.0],
-            [-50.0,-30.0,-30.0,-30.0,-30.0,-30.0,-30.0,-50.0]
+            [-50,-40,-30,-20,-20,-30,-40,-50],
+            [-30,-20,-10,  0,  0,-10,-20,-30],
+            [-30,-10, 20, 30, 30, 20,-10,-30],
+            [-30,-10, 30, 40, 40, 30,-10,-30],
+            [-30,-10, 30, 40, 40, 30,-10,-30],
+            [-30,-10, 20, 30, 30, 20,-10,-30],
+            [-30,-30,  0,  0,  0,  0,-30,-30],
+            [-50,-30,-30,-30,-30,-30,-30,-50]
         ]
     }
+
+    BIG_DELTA : int = 905
+    PROMOTION_DELTA : int = 745
+    MATE_SCORE : int = 100000
+    INFINITY : int = 1 << 32
 
     def __init__(self):
         self.searching = False
@@ -1066,9 +1074,8 @@ class Computer_Player:
         self.last_search_interrupted = False
         self.nodes_visited = 0
         self.transpositions = 0
-        self.i = 0
 
-    def get_pst_value(self, piece : Piece, use_endgame_values = False) -> float:
+    def get_pst_value(self, piece : Piece, use_endgame_values = False) -> int:
         if piece == None:
             return 0
 
@@ -1089,7 +1096,7 @@ class Computer_Player:
     # tatsächlich gibt SEE nie eine negative Zahl zurück, weil der momentane Spieler die Schlagkette nicht anfangen muss,
     # wenn er verlieren würde : SEE gibt in diesem Fall 0 zurück
     # Quelle : https://www.researchgate.net/publication/298853351_STATIC_EXCHANGE_EVALUATION_WITH_alpha_beta-APPROACH
-    def see(self, board : Board, pos : tuple) -> float:
+    def see(self, board : Board, pos : tuple) -> int:
         # SEE funktioniert nur auf Feldern wo eine Figur des Spielers steht,
         # der momentan nicht ziehen kann
         if board.board[pos[0]][pos[1]] == None or board.board[pos[0]][pos[1]].color == board.turn:
@@ -1123,14 +1130,13 @@ class Computer_Player:
         return value
     
     # führt eine statische Evaluation des Spielfeldes durch
-    def evaluate(self, board : Board, color : int, last_move : Move = None) -> float:
+    def evaluate(self, board : Board, color : int, last_move : Move = None) -> int:
         value = 0
 
         own_queens = 0
         other_queens = 0
         own_minor_pieces = 0
         other_minor_pieces = 0
-
 
         for piece in board.pieces:
             if piece.color == color:
@@ -1161,40 +1167,110 @@ class Computer_Player:
 
         return value
 
-    # sortiert die Züge nach dem SEE-Algorithmus
-    def order_moves(self, moves : list, board : Board, depth : int) -> list:
+    # sortiert die Züge
+    def order_moves(self, moves : list, board : Board, depth : int, quiescence_order : bool = False) -> list:
         moves_copy = moves.copy()
         pv_moves = []
 
-        # der beste gefundene Zug der letzten Iteration(wenn vorhanden und möglich)
-        # kommt an den Anfang der Liste
-        for move in self.last_depth_principal_variation:
-            if move in moves_copy: 
-                moves_copy.remove(move)
-                pv_moves.append(move)
+        if not quiescence_order:
+            # der beste gefundene Zug der letzten Iteration(wenn vorhanden und möglich)
+            # kommt an den Anfang der Liste
+            for move in self.last_depth_principal_variation:
+                if move in moves_copy.copy(): 
+                    moves_copy.remove(move)
+                    pv_moves.append(move)
         
         winning_captures = []
         losing_captures = []
         killer_moves = []
 
-        for move in moves_copy:
+        for move in moves_copy.copy():
             if move.captured != None:
                 board.do_move(move)
-                if self.piece_value[type(move.captured)] - self.see(board, move.to) >= 0:
-                    winning_captures.append(move)
+                val = self.piece_value[type(move.captured)] - self.see(board, move.to)
+                if val >= 0:
+                    winning_captures.append((move, val))
                     moves_copy.remove(move)
                 else:
                     losing_captures.append(move)
                     moves_copy.remove(move)
                 board.undo_move(move)
-            elif move in self.killer_moves[depth - 1]:
+            elif not quiescence_order and move in self.killer_moves[depth - 1]:
                 killer_moves.append(move)
                 moves_copy.remove(move)
         
-        return pv_moves + winning_captures + killer_moves + moves_copy + losing_captures
+        winning_captures.sort(key = lambda x : x[1], reverse = True)
+        winning_captures = [x[0] for x in winning_captures]
+        
+        if not quiescence_order:
+            return pv_moves + winning_captures + killer_moves + moves_copy + losing_captures
+        else:
+            return winning_captures + moves_copy
 
 
-    def alpha_beta(self, board : Board, depth : int, alpha : float, beta : float, principal_variation : list) -> float:
+    # Quiescence-Suche
+    # Traversiert den Spielbaum nur noch mit Schlagzügen
+    def quiescence(self, board : Board, alpha : int, beta : int) -> int:
+        self.nodes_visited += 1
+
+        if board.__hash__() in self.transposition_table:
+            self.transpositions += 1
+            tt_entry = self.transposition_table[board.__hash__()]
+            if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT or tt_entry.entry_type == Transposition_Table_Entry_Type.QUIESCENT:
+                return tt_entry.value
+            elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
+                if tt_entry.value >= beta:
+                    beta = tt_entry.value
+            elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
+                if tt_entry.value <= alpha:
+                    alpha = tt_entry.value
+
+        other_king = [x for x in board.pieces if isinstance(x, King) and x.color != board.turn][0]
+        own_pieces = [x for x in board.pieces if x.color == board.turn]
+
+        if any(piece.attacks_square(other_king.pos, board.board) for piece in own_pieces):
+            return self.MATE_SCORE
+
+        val = self.evaluate(board, board.turn)
+        if val >= beta:
+            return beta
+
+        # Delta Pruning
+        delta = self.BIG_DELTA
+
+        if len(board.move_history) > 0:
+            if isinstance(board.move_history[-1], Promotion_Move):
+                delta += self.PROMOTION_DELTA
+        
+        if val + delta <= alpha:
+            return alpha
+        
+        if val > alpha:
+            alpha = val
+        
+        captures = [x for x in board.get_moves(board.turn) if x.captured != None or isinstance(x, Promotion_Move)]
+
+        tt_type = None
+
+        for move in self.order_moves(captures, board, 0, True):
+            board.do_move(move)
+            val = -self.quiescence(board, -beta, -alpha)
+            board.undo_move(move)
+            if val >= beta:
+                return beta
+            
+            if val > alpha:
+                alpha = val
+                tt_type = Transposition_Table_Entry_Type.QUIESCENT
+            
+        if tt_type != None and not board.__hash__() in self.transposition_table:
+            tt_entry = Transposition_Table_Entry(alpha, -1, tt_type)
+            self.transposition_table[board.__hash__()] = tt_entry
+            
+        return alpha
+
+
+    def alpha_beta(self, board : Board, depth : int, alpha : int, beta : int, principal_variation : list) -> int:
         self.nodes_visited += 1
         
         # überprüfe, ob die Spielposition in der Transpositionstabelle enthalten ist
@@ -1204,19 +1280,21 @@ class Computer_Player:
             # wenn die Suchtiefe nach dem Eintrag größer oder gleich der Suchtiefe ist,
             # mit der dieser Knoten noch bewertet werden soll
             if tt_entry.depth >= depth:
-                self.transpositions += 1
                 # Wenn der Eintrag in der Transpositionstabelle ein exakter Eintrag ist,
                 # dann wurden alle Kinder bewertet und wir wissen, dass das die tatsächliche Bewertung ist
                 if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
+                    self.transpositions += 1
                     principal_variation.clear()
                     principal_variation.extend(tt_entry.principal_variation)
                     return tt_entry.value
                 # Dieser Knoten wurde letztes mal durch die Beta-Bedingung abgeschnitten
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
+                    self.transpositions += 1
                     if tt_entry.value >= beta:
                         beta = tt_entry.value
                 # Dieser Knoten wurde letztes mal vollständig bewertet, jedoch konnte alpha nicht verbessert werden
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
+                    self.transpositions += 1
                     if tt_entry.value <= alpha:
                         alpha = tt_entry.value
                 
@@ -1225,18 +1303,21 @@ class Computer_Player:
                     return tt_entry.value
 
         if depth == 0:
-            if len(board.move_history) == 0:
-                return self.evaluate(board, board.turn)
-            else:
-                return self.evaluate(board, board.turn, board.move_history[-1])
+            self.nodes_visited -= 1
+            return self.quiescence(board, alpha, beta)
 
         tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
 
         b = beta
         i = 0
 
+        moves = board.get_legitimate_moves(board.turn)
+
+        if len(moves) == 0:
+            return -self.MATE_SCORE + (self.curr_depth - depth)
+
         # simuliere alle möglichen Züge
-        for move in self.order_moves(board.get_legitimate_moves(board.turn), board, depth):
+        for move in self.order_moves(moves, board, depth):
             i += 1
             board.do_move(move)
             child_pv = []
@@ -1301,7 +1382,7 @@ class Computer_Player:
 
             pv = []
 
-            self.alpha_beta(board, self.curr_depth, -inf, inf, pv)
+            self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY, pv)
 
             if not self.last_search_interrupted:
                 print(f"Depth: {self.curr_depth} | Nodes visited: {self.nodes_visited} | Transpositions: {self.transpositions}")
@@ -1329,11 +1410,12 @@ BLACK = 1
 starting_board = Board()
 midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
 endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
+forced_mate = Board("1k2r3/ppp3b1/7p/N6P/1PP5/P7/6Q1/2K5 b - - 0 1")
 
 cp = Computer_Player()
 
 start = int(round(time.time() * 1000000))
-move = cp.get_move(midgame_board)
+move = cp.get_move(forced_mate, 10)
 end = int(round(time.time() * 1000000))
 
 print(f"Zug generiert nach {end - start}µs")
