@@ -2,6 +2,8 @@ from uuid import uuid4
 from enum import Enum
 from threading import Timer
 from copy import copy
+from math import exp
+from collections import defaultdict
 
 # Klasse, die einen regulären Schachzug kapselt
 class Move:
@@ -166,6 +168,9 @@ class Castling_Move(Move):
             return False
         
         return self.fr == o.fr and self.to == o.to and self.castling_rook_fr == o.castling_rook_fr and self.castling_rook_to == o.castling_rook_to and self.first_move == o.first_move
+    
+    def __str__(self):
+        return super().__str__()
 
 # Klasse, die einen En Passant Zug kapselt
 class En_Passant_Move(Move):
@@ -178,6 +183,9 @@ class En_Passant_Move(Move):
             return False
         
         return self.fr == o.fr and self.to == o.to and self.en_passant_pos == o.en_passant_pos and self.captured == o.captured
+    
+    def __str__(self):
+        return super().__str__()
 
 # Klasse, die eine Bauernaufwertung kapselt
 class Promotion_Move(Move):
@@ -205,6 +213,9 @@ class Pawn_Double_Move(Move):
             return False
         
         return self.fr == o.fr and self.to == o.to
+    
+    def __str__(self):
+        return super().__str__()
 
 # Bauer
 class Pawn(Piece):
@@ -429,7 +440,7 @@ class Bishop(Piece):
         row_diff = square[1] - self.pos[1]
 
         # überprüfe, ob das zu überprüfende Feld in derselben Diagonale liegt
-        if abs(row_diff) == abs(col_diff):
+        if abs(row_diff) == abs(col_diff) and col_diff != 0:
             for i in range(1, abs(row_diff)):
                 # überprüfe, ob eine Figur zwischen beiden Feldern steht
                 if board[self.pos[0] + i * col_diff // abs(col_diff)][self.pos[1] + i * row_diff // abs(row_diff)] != None:
@@ -439,7 +450,10 @@ class Bishop(Piece):
         return False
     
     def attacks_square_on_empty_board(self, square : tuple):
-        return abs(square[0] - self.pos[0]) == abs(square[1] - self.pos[1])
+        col_diff = abs(square[0] - self.pos[0])
+        row_diff = abs(square[1] - self.pos[1])
+
+        return abs(col_diff) == abs(row_diff) and col_diff != 0
 
 # Dame
 class Queen(Piece):
@@ -579,15 +593,12 @@ class King(Piece):
 # Stellt ein Schachbrett dar
 # kann Züge generieren auf das Schachbrett ausführen
 class Board:
-    def __init__(self, fen_string : str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"):
+    def __init__(self, fen_string : str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"):
         self.turn = 0
         self.board = [[None for x in range(8)] for y in range(8)]
 
         # Initialisiere die Figuren
         self.read_fen_string(fen_string)
-
-        global global_id
-        global_id = id(self.board[2][5])
         
         self.pieces = []
         for x in range(8):
@@ -599,9 +610,12 @@ class Board:
         if len(kings) != 2 or kings[0].color == kings[1].color:
             raise ValueError("Invalid FEN string: Both colors must have exactly one King")
         
+        self.repetition_table = defaultdict(lambda : 0)
+        
         self.move_history = []
         
         self.init_zobrist()
+        self.repetition_table[self.__hash__()] = 1
     
     def __eq__(self, o):
         if type(self) != type(o):
@@ -616,7 +630,6 @@ class Board:
                     return False
         
         return True
-            
         
     # initialisiere die Zobristtabelle
     def init_zobrist(self):
@@ -802,6 +815,9 @@ class Board:
         
         # Teil 5 und Teil 6(Halfmove- und Fullmove-Nummern) sind in diesem Projekt nicht relevant und werden hier ignoriert
 
+    def is_draw_by_repetition(self):
+        return self.repetition_table[self.__hash__()] >= 3
+
     # gibt alle machbaren Züge einer Farbe zurück
     # enthält Züge, die den eigenen König im Schach lassen(illegal)!
     def get_moves(self, color : int) -> list:
@@ -850,7 +866,7 @@ class Board:
         own_pieces = [x for x in self.pieces if x.color == color]
         enemy_pieces = [x for x in self.pieces if x.color != color]
 
-        # Es reicht i.d.R., die gegnerischen Figuren zu betrachten, die den Köing auf einem sonst leeren Feld in Schach stellen
+        # Es reicht i.d.R., die gegnerischen Figuren zu betrachten, die den König auf einem sonst leeren Feld in Schach stellen
         potential_enemy_attackers = [x for x in self.pieces if x.color != color and x.attacks_square_on_empty_board(king.pos)]
 
         for piece in own_pieces:
@@ -859,15 +875,10 @@ class Board:
 
                 # Wenn der König bewegt wurde, müssen alle gegnerischen Figuren betrachtet werden
                 if isinstance(self.board[move.to[0]][move.to[1]], King):
-                    enemy_pieces_copy = []
-                    if move.captured != None:
-                        enemy_pieces_copy = [x for x in enemy_pieces if x != move.captured]
-                    else:
-                        enemy_pieces_copy = enemy_pieces
-                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces_copy):
+                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces if move.captured != x):
                         moves.append(move)
                 else:
-                    if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers):
+                    if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers if move.captured != x):
                         moves.append(move)
 
                 self.undo_move(move)
@@ -892,7 +903,7 @@ class Board:
         elif isinstance(move, Castling_Move):
             self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]
             self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = None
-            self.pieces[self.board[move.castling_rook_to[0]][move.castling_rook_to[1]]] = move.castling_rook_to
+            self.board[move.castling_rook_to[0]][move.castling_rook_to[1]].pos = move.castling_rook_to
         elif isinstance(move, Promotion_Move):
             self.board[move.to[0]][move.to[1]] = move.promotion_piece
             move.promotion_piece.pos = move.to
@@ -908,14 +919,18 @@ class Board:
                     move.undone_advanced_two_last_move = piece.pos
                     break
         
+        self.turn = 1 - self.turn
+
         self.move_history.append(move)
 
-        self.turn = 1 - self.turn
+        self.repetition_table[self.__hash__()] += 1
     
     # macht einen Zug rückgängig
     def undo_move(self, move : Move):
         if move != self.move_history[-1]:
             raise ValueError("Can only undo last move")
+        
+        self.repetition_table[self.__hash__()] -= 1
 
         if move.undone_advanced_two_last_move != None:
             pos = move.undone_advanced_two_last_move
@@ -948,9 +963,9 @@ class Board:
             move.captured.advanced_two_last_move = True
             self.pieces.append(move.captured)
         
-        self.move_history.pop()
-
         self.turn = 1 - self.turn
+
+        self.move_history.pop()
 
 class Transposition_Table_Entry_Type(Enum):
     EXACT = 0
@@ -963,7 +978,7 @@ class Transposition_Table_Entry:
         self.value = value
         self.depth = depth
         self.entry_type = entry_type
-        self.principal_variation = None
+        self.move = None
         self.killer_moves = []
 
 class Computer_Player:
@@ -1060,17 +1075,15 @@ class Computer_Player:
         ]
     }
 
-    BIG_DELTA : int = 905
-    PROMOTION_DELTA : int = 745
     MATE_SCORE : int = 100000
     INFINITY : int = 1 << 32
+    MAX_QUIESCENCE_CHECK_DEPTH : int = 3
 
     def __init__(self):
         self.searching = False
         self.curr_depth = 0
         self.transposition_table = {}
         self.best_move = None
-        self.last_search_principal_variation = []
         self.last_search_interrupted = False
         self.nodes_visited = 0
         self.transpositions = 0
@@ -1138,26 +1151,50 @@ class Computer_Player:
         own_minor_pieces = 0
         other_minor_pieces = 0
 
+        own_piece_value = 0
+        other_piece_value = 0
+
         for piece in board.pieces:
             if piece.color == color:
-                value += self.piece_value[type(piece)]
+                own_piece_value += self.piece_value[type(piece)]
                 if isinstance(piece, Queen):
                     own_queens += 1
                 
-                if isinstance(piece, (Knight, Bishop)):
+                if isinstance(piece, (Knight, Bishop, Rook)):
                     own_minor_pieces += 1
             else:
-                value -= self.piece_value[type(piece)]
+                other_piece_value += self.piece_value[type(piece)]
                 if isinstance(piece, Queen):
                     other_queens += 1
 
-                if isinstance(piece, (Knight, Bishop)):
+                if isinstance(piece, (Knight, Bishop, Rook)):
                     other_minor_pieces += 1
         
-        endgame = (own_queens == 0 and other_queens == 0) or (own_minor_pieces <= 1 and other_minor_pieces <= 1)
+        value += own_piece_value - other_piece_value
+        
+        self_in_endgame = own_queens == 0 or own_minor_pieces < 2
+        other_in_endgame = other_queens == 0 or other_minor_pieces < 2
+
+        endgame = self_in_endgame and other_in_endgame
 
         own_pieces = [piece for piece in board.pieces if piece.color == color]
         other_pieces = [piece for piece in board.pieces if piece.color != color]
+
+        if endgame and own_piece_value != other_piece_value:
+            endgame_weight = exp(0.15 * len(board.pieces))
+
+            own_king = [piece for piece in own_pieces if isinstance(piece, King)][0]
+            other_king = [piece for piece in other_pieces if isinstance(piece, King)][0]
+
+            other_king_dst_to_centre = max(max(3 - other_king.pos[0], other_king.pos[0] - 4), max(3 - other_king.pos[1], other_king.pos[1] - 4))
+            king_distance = max(abs(own_king.pos[0] - other_king.pos[0]), abs(own_king.pos[1] - other_king.pos[1]))
+
+            king_value = other_king_dst_to_centre + 7 - king_distance
+
+            if own_piece_value > other_piece_value:
+                value += king_value * endgame_weight
+            elif own_piece_value < other_piece_value:
+                value -= king_value * endgame_weight
 
         for piece in own_pieces:
             value += self.get_pst_value(piece, endgame)
@@ -1170,15 +1207,15 @@ class Computer_Player:
     # sortiert die Züge
     def order_moves(self, moves : list, board : Board, depth : int, quiescence_order : bool = False) -> list:
         moves_copy = moves.copy()
-        pv_moves = []
+        hash_move = []
 
-        if not quiescence_order:
-            # der beste gefundene Zug der letzten Iteration(wenn vorhanden und möglich)
-            # kommt an den Anfang der Liste
-            for move in self.last_depth_principal_variation:
-                if move in moves_copy.copy(): 
-                    moves_copy.remove(move)
-                    pv_moves.append(move)
+        if board.__hash__() in self.transposition_table:
+            tt_entry = self.transposition_table[board.__hash__()]
+            if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT or tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
+                if tt_entry.move in moves_copy:
+                    hash_move.append(tt_entry.move)
+                    moves_copy.remove(tt_entry.move)
+
         
         winning_captures = []
         losing_captures = []
@@ -1189,7 +1226,7 @@ class Computer_Player:
                 board.do_move(move)
                 val = self.piece_value[type(move.captured)] - self.see(board, move.to)
                 if val >= 0:
-                    winning_captures.append((move, val))
+                    winning_captures.append(move)
                     moves_copy.remove(move)
                 else:
                     losing_captures.append(move)
@@ -1199,18 +1236,12 @@ class Computer_Player:
                 killer_moves.append(move)
                 moves_copy.remove(move)
         
-        winning_captures.sort(key = lambda x : x[1], reverse = True)
-        winning_captures = [x[0] for x in winning_captures]
-        
-        if not quiescence_order:
-            return pv_moves + winning_captures + killer_moves + moves_copy + losing_captures
-        else:
-            return winning_captures + moves_copy
+        return hash_move + winning_captures + killer_moves + moves_copy + losing_captures
 
 
     # Quiescence-Suche
     # Traversiert den Spielbaum nur noch mit Schlagzügen
-    def quiescence(self, board : Board, alpha : int, beta : int) -> int:
+    def quiescence(self, board : Board, depth : int, alpha : int, beta : int) -> int:
         self.nodes_visited += 1
 
         if board.__hash__() in self.transposition_table:
@@ -1224,37 +1255,57 @@ class Computer_Player:
             elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
                 if tt_entry.value <= alpha:
                     alpha = tt_entry.value
+            
+            # Wenn sich Alpha und Beta überschneiden, dann ist die Bewertung des aktuellen Knotens nicht mehr relevant
+            if alpha >= beta:
+                return tt_entry.value
 
+        own_king = [x for x in board.pieces if isinstance(x, King) and x.color == board.turn][0]
         other_king = [x for x in board.pieces if isinstance(x, King) and x.color != board.turn][0]
         own_pieces = [x for x in board.pieces if x.color == board.turn]
+        other_pieces = [x for x in board.pieces if x.color != board.turn]
 
-        if any(piece.attacks_square(other_king.pos, board.board) for piece in own_pieces):
-            return self.MATE_SCORE
+        check = any(x.attacks_square(own_king.pos, board.board) for x in other_pieces)
+        moves = []
 
-        val = self.evaluate(board, board.turn)
-        if val >= beta:
-            return beta
+        if not check:
+            val = self.evaluate(board, board.turn)
 
-        # Delta Pruning
-        delta = self.BIG_DELTA
+            if board.is_draw_by_repetition():
+                val = max(0, val)
 
-        if len(board.move_history) > 0:
-            if isinstance(board.move_history[-1], Promotion_Move):
-                delta += self.PROMOTION_DELTA
-        
-        if val + delta <= alpha:
-            return alpha
-        
-        if val > alpha:
-            alpha = val
-        
-        captures = [x for x in board.get_moves(board.turn) if x.captured != None or isinstance(x, Promotion_Move)]
+            if val >= beta:
+                return beta
+            
+            if val > alpha:
+                alpha = val
+
+            for move in board.get_legitimate_moves(board.turn):
+                if move.captured != None:
+                    moves.append(move)
+                elif depth <= 0:
+                    board.do_move(move)
+
+                    if any(x.attacks_square(other_king.pos, board.board) for x in own_pieces):
+                        moves.append(move)
+
+                    board.undo_move(move)
+        else:
+            moves = board.get_legitimate_moves(board.turn)
+            if len(moves) == 0:
+                score = 0
+                if any(piece.attacks_square(own_king.pos, board.board) for piece in other_pieces):
+                    score = -self.MATE_SCORE
+                if board.__hash__() not in self.transposition_table:
+                    tt_entry = Transposition_Table_Entry(score, -1, Transposition_Table_Entry_Type.QUIESCENT)
+                    self.transposition_table[board.__hash__()] = tt_entry
+                return score
 
         tt_type = None
 
-        for move in self.order_moves(captures, board, 0, True):
+        for move in self.order_moves(moves, board, 0, True):
             board.do_move(move)
-            val = -self.quiescence(board, -beta, -alpha)
+            val = -self.quiescence(board, depth - 1, -beta, -alpha)
             board.undo_move(move)
             if val >= beta:
                 return beta
@@ -1270,7 +1321,7 @@ class Computer_Player:
         return alpha
 
 
-    def alpha_beta(self, board : Board, depth : int, alpha : int, beta : int, principal_variation : list) -> int:
+    def alpha_beta(self, board : Board, depth : int, alpha : int, beta : int) -> int:
         self.nodes_visited += 1
         
         # überprüfe, ob die Spielposition in der Transpositionstabelle enthalten ist
@@ -1284,8 +1335,6 @@ class Computer_Player:
                 # dann wurden alle Kinder bewertet und wir wissen, dass das die tatsächliche Bewertung ist
                 if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
                     self.transpositions += 1
-                    principal_variation.clear()
-                    principal_variation.extend(tt_entry.principal_variation)
                     return tt_entry.value
                 # Dieser Knoten wurde letztes mal durch die Beta-Bedingung abgeschnitten
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
@@ -1304,7 +1353,7 @@ class Computer_Player:
 
         if depth == 0:
             self.nodes_visited -= 1
-            return self.quiescence(board, alpha, beta)
+            return self.quiescence(board, self.MAX_QUIESCENCE_CHECK_DEPTH, alpha, beta)
 
         tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
 
@@ -1314,24 +1363,37 @@ class Computer_Player:
         moves = board.get_legitimate_moves(board.turn)
 
         if len(moves) == 0:
-            return -self.MATE_SCORE + (self.curr_depth - depth)
+            score = 0
+            own_king = [x for x in board.pieces if x.color == board.turn and isinstance(x, King)][0]
+            other_pieces = [x for x in board.pieces if x.color != board.turn]
+            if any(piece.attacks_square(own_king.pos, board.board) for piece in other_pieces):
+                score = -self.MATE_SCORE + (self.curr_depth - depth)
+            
+            tt_entry = Transposition_Table_Entry(score, depth, Transposition_Table_Entry_Type.EXACT)
+            self.transposition_table[board.__hash__()] = tt_entry
+            return score
+        
+        best_move = None
 
         # simuliere alle möglichen Züge
         for move in self.order_moves(moves, board, depth):
             i += 1
             board.do_move(move)
-            child_pv = []
-            val = -self.alpha_beta(board, depth - 1, -b, -alpha, child_pv)
+            val = -self.alpha_beta(board, depth - 1, -b, -alpha)
 
             if val > alpha and val < beta and i > 1 and depth > 1:
-                child_pv = []
-                val = -self.alpha_beta(board, depth - 1, -beta, -val, child_pv)
+                val = -self.alpha_beta(board, depth - 1, -beta, -val)
+
+            if board.is_draw_by_repetition():
+                val = max(0, val)
 
             board.undo_move(move)
 
             # Beta-Schnitt
             if val >= beta:
-                self.transposition_table[board.__hash__()] = Transposition_Table_Entry(beta, depth, Transposition_Table_Entry_Type.LOWER_BOUND)
+                tt_entry = Transposition_Table_Entry(beta, depth, Transposition_Table_Entry_Type.LOWER_BOUND)
+                tt_entry.move = move
+                self.transposition_table[board.__hash__()] = tt_entry
 
                 # Speichere Killer-Move ab
                 if move.captured == None:
@@ -1342,11 +1404,8 @@ class Computer_Player:
             # Wir konnten mit diesem Zug das Alpha verbessern
             if val > alpha:
                 tt_type = Transposition_Table_Entry_Type.EXACT
+                best_move = move
                 alpha = val
-
-                principal_variation.clear()
-                principal_variation.append(move)
-                principal_variation.extend(child_pv)
             
             if not self.searching:
                 self.last_search_interrupted = True
@@ -1358,7 +1417,7 @@ class Computer_Player:
         tt_entry = Transposition_Table_Entry(alpha, depth, tt_type)
         self.transposition_table[board.__hash__()] = tt_entry
         if tt_type == Transposition_Table_Entry_Type.EXACT:
-            tt_entry.principal_variation = principal_variation.copy()
+            tt_entry.move = best_move
 
         return alpha
     
@@ -1371,7 +1430,6 @@ class Computer_Player:
         self.transpositions = 0
         self.searching = True
         self.last_search_interrupted = False
-        self.last_depth_principal_variation = []
         self.killer_moves = []
 
         Timer(search_time, self.stop_search).start()
@@ -1380,27 +1438,22 @@ class Computer_Player:
             self.curr_depth += depth_incr
             self.killer_moves = [[None, None]] * (self.curr_depth - len(self.killer_moves)) + self.killer_moves
 
-            pv = []
-
-            self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY, pv)
+            val = self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY)
 
             if not self.last_search_interrupted:
-                print(f"Depth: {self.curr_depth} | Nodes visited: {self.nodes_visited} | Transpositions: {self.transpositions}")
-                self.last_depth_principal_variation = pv
+                print(f"Depth: {self.curr_depth} | Nodes visited: {self.nodes_visited} | Transpositions: {self.transpositions} | Best move: {self.transposition_table[board.__hash__()].move} | Value: {val}")
             
-            self.best_move = self.last_depth_principal_variation[0] if len(self.last_depth_principal_variation) > 0 else None
-        
-        self.last_depth_principal_variation = [x for x in self.last_depth_principal_variation if x != None]
-        
-        print(f"PV of last full search(depth {self.curr_depth - 1}:)")
-
-        for move in self.last_depth_principal_variation:
-            print(move)
+            self.best_move = self.transposition_table[board.__hash__()].move
 
         return self.best_move
 
 
-b = Board()
+def pick_move(board : Board) -> Move:
+    while True:
+        user_in = input()
+        for move in board.get_legitimate_moves(board.turn):
+            if str(move) == user_in.strip():
+                return move
 
 import time
 
@@ -1410,12 +1463,12 @@ BLACK = 1
 starting_board = Board()
 midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
 endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
-forced_mate = Board("1k2r3/ppp3b1/7p/N6P/1PP5/P7/6Q1/2K5 b - - 0 1")
 
 cp = Computer_Player()
 
-start = int(round(time.time() * 1000000))
-move = cp.get_move(forced_mate, 10)
-end = int(round(time.time() * 1000000))
-
-print(f"Zug generiert nach {end - start}µs")
+while True:
+    cp_move = cp.get_move(starting_board, 5)
+    print(f"Move played: {cp_move}")
+    starting_board.do_move(cp_move)
+    p_move = pick_move(starting_board)
+    starting_board.do_move(p_move)
