@@ -13,7 +13,7 @@ class Move:
         self.captured = None
         self.first_move = False
         self.undone_advanced_two_last_move = None
-        self.hash_before_move = None
+        self.hash_before = None
     
     def __str__(self):
         return f"{chr(self.fr[0] + 65)}{self.fr[1] + 1} -> {chr(self.to[0] + 65)}{self.to[1] + 1}"
@@ -319,19 +319,15 @@ class Pawn(Piece):
                 # Bauern können in Damen, Türmen, Läufern und Springer umwandeln
                 queen_move = Promotion_Move(move.fr, move.to, Queen(self.color, move.to), self)
                 queen_move.captured = move.captured
-                queen_move.promotion_piece.moved = True
                 moves.append(queen_move)
                 rook_move = Promotion_Move(move.fr, move.to, Rook(self.color, move.to), self)
                 rook_move.captured = move.captured
-                rook_move.promotion_piece.moved = True
                 moves.append(rook_move)
                 bishop_move = Promotion_Move(move.fr, move.to, Bishop(self.color, move.to), self)
                 bishop_move.captured = move.captured
-                bishop_move.promotion_piece.moved = True
                 moves.append(bishop_move)
                 knight_move = Promotion_Move(move.fr, move.to, Knight(self.color, move.to), self)
                 knight_move.captured = move.captured
-                knight_move.promotion_piece.moved = True
                 moves.append(knight_move)
 
                 # entferne den alten Zug
@@ -686,9 +682,7 @@ class Board:
             res ^= self.zobrist_table[piece.pos[0] * 8 + piece.pos[1]][self.get_zobrist_piece_value(piece)]
 
         return res
-    
-    # generiert aus einer Liste von Zügen die dazugehörigen Hashes, wenn man den Zug ausführen würde
-    # weitaus effizienter als den Zug ausszuführen, zu hashen und ihn dann wieder Rückgängig zu machen
+
     def get_hash_after_move(self, move : Move) -> int:
         # Spielfarbe wechseln
         new_hash = self.hash ^ self.black_to_move
@@ -742,6 +736,7 @@ class Board:
 
         return new_hash
 
+        
     # liest einen FEN-String ein und initialisiert das Board
     # FEN-Strings sind der Standard um Schachfelder mit ASCII-Zeichen zu beschreiben
     def read_fen_string(self, fen_string : str):
@@ -837,7 +832,7 @@ class Board:
         
         # Teil 5 und Teil 6(Halfmove- und Fullmove-Nummern) sind in diesem Projekt nicht relevant und werden hier ignoriert
 
-    def is_draw_by_repetition(self) -> bool:
+    def is_draw_by_repetition(self):
         return self.repetition_table[self.hash] >= 3
 
     # gibt alle machbaren Züge einer Farbe zurück
@@ -915,17 +910,19 @@ class Board:
         if move.captured != None:
             self.pieces.remove(move.captured)
         
-        self.board[move.to[0]][move.to[1]] = self.board[move.fr[0]][move.fr[1]]
+        moving_piece = self.board[move.fr[0]][move.fr[1]]
+        self.board[move.to[0]][move.to[1]] = moving_piece
         self.board[move.fr[0]][move.fr[1]] = None
-        self.board[move.to[0]][move.to[1]].pos = move.to
-        self.board[move.to[0]][move.to[1]].moved = True
+        moving_piece.pos = move.to
+        moving_piece.moved = True
 
         if isinstance(move, Pawn_Double_Move):
-            self.board[move.to[0]][move.to[1]].advanced_two_last_move = True
+            moving_piece.advanced_two_last_move = True
         elif isinstance(move, Castling_Move):
-            self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]
+            castling_rook = self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]
+            self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = castling_rook
             self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = None
-            self.board[move.castling_rook_to[0]][move.castling_rook_to[1]].pos = move.castling_rook_to
+            castling_rook.pos = move.castling_rook_to
         elif isinstance(move, Promotion_Move):
             self.board[move.to[0]][move.to[1]] = move.promotion_piece
             move.promotion_piece.pos = move.to
@@ -945,12 +942,8 @@ class Board:
 
         self.move_history.append(move)
 
-        move.hash_before_move = self.hash
+        move.hash_before = self.hash
         self.hash = self.get_hash_after_move(move)
-        if self.hash != self.__hash__():
-            for move in self.move_history:
-                print(move)
-            raise ValueError(f"Hash mismatch after {move}")
 
         self.repetition_table[self.hash] += 1
     
@@ -958,15 +951,19 @@ class Board:
     def undo_move(self, move : Move):
         if move != self.move_history[-1]:
             raise ValueError("Can only undo last move")
+        
+        self.repetition_table[self.hash] -= 1
 
         if move.undone_advanced_two_last_move != None:
             pos = move.undone_advanced_two_last_move
             self.board[pos[0]][pos[1]].advanced_two_last_move = True
+        
+        moving_piece = self.board[move.to[0]][move.to[1]]
 
-        self.board[move.fr[0]][move.fr[1]] = self.board[move.to[0]][move.to[1]]
+        self.board[move.fr[0]][move.fr[1]] = moving_piece
         self.board[move.to[0]][move.to[1]] = None
-        self.board[move.fr[0]][move.fr[1]].pos = move.fr
-        self.board[move.fr[0]][move.fr[1]].moved = not move.first_move
+        moving_piece.pos = move.fr
+        moving_piece.moved = not move.first_move
 
         if move.captured != None:
             self.board[move.to[0]][move.to[1]] = move.captured
@@ -974,11 +971,12 @@ class Board:
             self.pieces.append(move.captured)
         
         if isinstance(move, Pawn_Double_Move):
-            self.board[move.fr[0]][move.fr[1]].advanced_two_last_move = False
+            moving_piece.advanced_two_last_move = False
         elif isinstance(move, Castling_Move):
-            self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = self.board[move.castling_rook_to[0]][move.castling_rook_to[1]]
+            castling_rook = self.board[move.castling_rook_to[0]][move.castling_rook_to[1]]
+            self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = castling_rook
             self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = None
-            self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]].pos = move.castling_rook_fr
+            castling_rook.pos = move.castling_rook_fr
         elif isinstance(move, Promotion_Move):
             self.board[move.fr[0]][move.fr[1]] = move.promoted_piece
             move.promoted_piece.pos = move.fr
@@ -992,19 +990,12 @@ class Board:
         
         self.turn = 1 - self.turn
 
-        self.move_history.pop()
-
-        if move.hash_before_move != None:
-            self.hash = move.hash_before_move
+        if move.hash_before != None:
+            self.hash = move.hash_before
         else:
             self.hash = self.__hash__()
-        
-        if self.hash != self.__hash__():
-            for move in self.move_history:
-                print(move)
-            raise ValueError(f"Hash mismatch after undoing {move}")
 
-        self.repetition_table[self.hash] -= 1
+        self.move_history.pop()
 
 class Transposition_Table_Entry_Type(Enum):
     EXACT = 0
@@ -1124,6 +1115,7 @@ class Computer_Player:
         self.transposition_table = {}
         self.best_move = None
         self.last_search_interrupted = False
+        self.mate_found = False
         self.nodes_visited = 0
         self.transpositions = 0
 
@@ -1182,35 +1174,38 @@ class Computer_Player:
         return value
     
     # führt eine statische Evaluation des Spielfeldes durch
-    def evaluate(self, board : Board, color : int) -> int:
+    def evaluate(self, board : Board, color : int, last_move : Move = None) -> int:
         value = 0
 
         own_queens = 0
         other_queens = 0
+
         own_minor_pieces = 0
         other_minor_pieces = 0
 
         own_piece_value = 0
         other_piece_value = 0
 
+        # Addiere Figurenbewertungen und zähle die Anzahl der Damen und Leichtfiguren (+ Turm)
         for piece in board.pieces:
             if piece.color == color:
                 own_piece_value += self.piece_value[type(piece)]
                 if isinstance(piece, Queen):
                     own_queens += 1
                 
-                if isinstance(piece, (Knight, Bishop, Rook)):
+                if isinstance(piece, (Knight, Bishop)):
                     own_minor_pieces += 1
             else:
                 other_piece_value += self.piece_value[type(piece)]
                 if isinstance(piece, Queen):
                     other_queens += 1
 
-                if isinstance(piece, (Knight, Bishop, Rook)):
+                if isinstance(piece, (Knight, Bishop)):
                     other_minor_pieces += 1
         
         value += own_piece_value - other_piece_value
         
+        # Überprüfe, ob wir uns im Endspiel befinden
         self_in_endgame = own_queens == 0 or own_minor_pieces < 2
         other_in_endgame = other_queens == 0 or other_minor_pieces < 2
 
@@ -1357,12 +1352,9 @@ class Computer_Player:
                 alpha = val
                 tt_type = Transposition_Table_Entry_Type.QUIESCENT
             
-        if tt_type != None:
-            if board.hash in self.transposition_table:
-                curr_tt_entry = self.transposition_table[board.hash]
-                if curr_tt_entry.entry_type == Transposition_Table_Entry_Type.QUIESCENT and curr_tt_entry.depth > depth:
-                    tt_entry = Transposition_Table_Entry(alpha, depth, tt_type)
-                    self.transposition_table[board.hash] = tt_entry
+        if tt_type != None and not board.hash in self.transposition_table:
+            tt_entry = Transposition_Table_Entry(alpha, -1, tt_type)
+            self.transposition_table[board.hash] = tt_entry
             
         return alpha
 
@@ -1452,6 +1444,13 @@ class Computer_Player:
                 tt_type = Transposition_Table_Entry_Type.EXACT
                 best_move = move
                 alpha = val
+
+                if self.curr_depth == depth and alpha >= self.MATE_SCORE - depth:
+                    tt_entry = Transposition_Table_Entry(alpha, depth, Transposition_Table_Entry_Type.EXACT)
+                    tt_entry.move = move
+                    self.transposition_table[board.hash] = tt_entry
+                    self.mate_found = True
+                    return alpha
             
             if not self.searching and self.best_move != None:
                 self.last_search_interrupted = True
@@ -1476,9 +1475,11 @@ class Computer_Player:
         self.transpositions = 0
         self.searching = True
         self.last_search_interrupted = False
+        self.mate_found = False
         self.killer_moves = []
 
-        Timer(search_time, self.stop_search).start()
+        timer = Timer(search_time, self.stop_search)
+        timer.start()
 
         while self.searching:
             self.curr_depth += depth_incr
@@ -1487,9 +1488,13 @@ class Computer_Player:
             val = self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY)
 
             if not self.last_search_interrupted:
-                print(f"Depth: {self.curr_depth} | Nodes visited: {self.nodes_visited} | Transpositions: {self.transpositions} | Best move: {self.transposition_table[board.hash].move} | Value: {val}")
-            
+                print(f"Depth: {self.curr_depth:2d} | Nodes visited: {self.nodes_visited:6d} | Transpositions: {self.transpositions:6d} | Value: {val:6d} | Best move: {self.transposition_table[board.hash].move}")
+
             self.best_move = self.transposition_table[board.hash].move
+
+            if self.mate_found:
+                timer.cancel()
+                break
 
         return self.best_move
 
@@ -1504,17 +1509,13 @@ def pick_move(board : Board) -> Move:
 WHITE = 0
 BLACK = 1
 
-starting_board = Board()
+starting_board = Board("8/8/8/8/2kq4/8/8/1K6 b - - 0 1")
 
 cp = Computer_Player()
 
-# while True:
-#     p_move = pick_move(starting_board)
-#     starting_board.do_move(p_move)
-#     cp_move = cp.get_move(starting_board, 5)
-#     print(f"Move played: {cp_move}")
-#     starting_board.do_move(cp_move)
-
-b = Board("rnbqkb1r/pppppppp/8/8/4P1n1/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1")
-
-print(cp.get_move(b, 5))
+while True:
+    cp_move = cp.get_move(starting_board, 5)
+    print(f"Move played: {cp_move}")
+    starting_board.do_move(cp_move)
+    p_move = pick_move(starting_board)
+    starting_board.do_move(p_move)
