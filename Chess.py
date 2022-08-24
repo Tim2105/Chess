@@ -1077,7 +1077,7 @@ class Computer_Player:
 
     MATE_SCORE : int = 100000
     INFINITY : int = 1 << 32
-    MAX_QUIESCENCE_CHECK_DEPTH : int = 3
+    MAX_QUIESCENCE_CHECK_DEPTH : int = 2
 
     def __init__(self):
         self.searching = False
@@ -1236,6 +1236,10 @@ class Computer_Player:
                 killer_moves.append(move)
                 moves_copy.remove(move)
         
+        # Wir brauchen keine Schlagzüge simulieren, wenn die SEE schon < 0 ist
+        if quiescence_order:
+            losing_captures.clear()
+        
         return hash_move + winning_captures + killer_moves + moves_copy + losing_captures
 
 
@@ -1283,7 +1287,7 @@ class Computer_Player:
             for move in board.get_legitimate_moves(board.turn):
                 if move.captured != None:
                     moves.append(move)
-                elif depth <= 0:
+                elif depth > 0:
                     board.do_move(move)
 
                     if any(x.attacks_square(other_king.pos, board.board) for x in own_pieces):
@@ -1407,7 +1411,7 @@ class Computer_Player:
                 best_move = move
                 alpha = val
             
-            if not self.searching:
+            if not self.searching and self.best_move != None:
                 self.last_search_interrupted = True
                 return alpha
             
@@ -1415,9 +1419,9 @@ class Computer_Player:
             
         # Eintrag in die Transpositionstabelle hinzufügen
         tt_entry = Transposition_Table_Entry(alpha, depth, tt_type)
-        self.transposition_table[board.__hash__()] = tt_entry
         if tt_type == Transposition_Table_Entry_Type.EXACT:
             tt_entry.move = best_move
+        self.transposition_table[board.__hash__()] = tt_entry
 
         return alpha
     
@@ -1455,20 +1459,18 @@ def pick_move(board : Board) -> Move:
             if str(move) == user_in.strip():
                 return move
 
-import time
-
 WHITE = 0
 BLACK = 1
 
 starting_board = Board()
-midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
-endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
+# midgame_board = Board("r5k1/5ppp/1p6/p1p5/7b/1PPrqPP1/1PQ4P/R4R1K b - - 0 1")
+# endgame_board = Board("8/8/8/8/5R2/2pk4/5K2/8 b - - 0 1")
 
 cp = Computer_Player()
 
 while True:
+    p_move = pick_move(starting_board)
+    starting_board.do_move(p_move)
     cp_move = cp.get_move(starting_board, 5)
     print(f"Move played: {cp_move}")
     starting_board.do_move(cp_move)
-    p_move = pick_move(starting_board)
-    starting_board.do_move(p_move)
