@@ -283,13 +283,20 @@ class ChessComputer:
         for move in moves_copy.copy():
             if move.captured != None:
                 board.do_move(move, False)
-                val = self.piece_value[type(move.captured)] - self.see(board, move.to)
-                if val >= 0:
+                material_diff = self.piece_value[type(move.captured)] - self.piece_value[type(board.board[move.to[0]][move.to[1]])]
+                # Wenn man eine Figur mit weniger Material schlägt, müssen wir kein SEE anwenden
+                if material_diff > 0:
                     winning_captures.append(move)
                     moves_copy.remove(move)
                 else:
-                    losing_captures.append(move)
-                    moves_copy.remove(move)
+                    val = self.piece_value[type(move.captured)] - self.see(board, move.to)
+                    if val >= 0:
+                        winning_captures.append(move)
+                        moves_copy.remove(move)
+                    else:
+                        losing_captures.append(move)
+                        moves_copy.remove(move)
+                        
                 board.undo_move(move, False)
             elif not quiescence_order:
                 if move in self.killer_moves[depth - 1]:
