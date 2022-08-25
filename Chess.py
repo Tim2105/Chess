@@ -4,9 +4,10 @@ import ChessComputer
 def pick_move(board : Board) -> Board.Move:
     while True:
         user_in = input()
-        for move in board.get_legitimate_moves(board.turn):
+        for move in board.get_legal_moves(board.turn):
             if str(move) == user_in.strip():
                 return move
+        print("Invalid move")
 
 WHITE = 0
 BLACK = 1

@@ -1,4 +1,4 @@
-from Piece import *
+from ChessUtils import *
 
 from collections import defaultdict
 from uuid import uuid4
@@ -23,6 +23,11 @@ class Board:
         kings = [x for x in self.pieces if isinstance(x, King)]
         if len(kings) != 2 or kings[0].color == kings[1].color:
             raise ValueError("Invalid FEN string: Both colors must have exactly one King")
+        
+        self.kings = kings
+        self.kings.sort(key=lambda x: x.color)
+
+        self.en_passantable_pawn = None
         
         # Initialisiere die Wiederholungstabelle
         # Die Tabelle speichert, wie häufig eine Position aufgetreten ist
@@ -117,7 +122,9 @@ class Board:
         # Bewegte Figur von alter Position raus-XORen
         # Wenn die Figur zum ersten mal bewegt wurde, muss man die unbewegte Variante raus XORen
         if move.first_move:
-            if isinstance(moving_piece, Rook):
+            if isinstance(move, Pawn_Double_Move):
+                new_hash ^= self.zobrist_table[move.fr[0] * 8 + move.fr[1]][self.get_zobrist_piece_value(moving_piece) - 8]
+            elif isinstance(moving_piece, Rook):
                 new_hash ^= self.zobrist_table[move.fr[0] * 8 + move.fr[1]][self.get_zobrist_piece_value(moving_piece) - 5]
             elif isinstance(moving_piece, King):
                 new_hash ^= self.zobrist_table[move.fr[0] * 8 + move.fr[1]][self.get_zobrist_piece_value(moving_piece) - 2]
@@ -133,12 +140,7 @@ class Board:
             else:
                 new_hash ^= self.zobrist_table[move.to[0] * 8 + move.to[1]][self.get_zobrist_piece_value(move.captured)]
             
-            new_hash ^= self.zobrist_table[move.to[0] * 8 + move.to[1]][self.get_zobrist_piece_value(moving_piece)]
-        elif isinstance(move, Pawn_Double_Move):
-            # Bauern die En-Passant geschlagen werden können werden als andere Figur betrachtet
-            new_hash ^= self.zobrist_table[move.to[0] * 8 + move.to[1]][self.get_zobrist_piece_value(moving_piece) + 8]
-        else:
-            new_hash ^= self.zobrist_table[move.to[0] * 8 + move.to[1]][self.get_zobrist_piece_value(moving_piece)]
+        new_hash ^= self.zobrist_table[move.to[0] * 8 + move.to[1]][self.get_zobrist_piece_value(moving_piece)]
 
         # Rochade "ein-XORen"
         if isinstance(move, Castling_Move):
@@ -146,12 +148,12 @@ class Board:
             new_hash ^= self.zobrist_table[move.castling_rook_to[0] * 8 + move.castling_rook_to[1]][self.get_zobrist_piece_value(self.board[move.castling_rook_to[0]][move.castling_rook_to[1]])]
         
         # Wenn ein Bauer nicht mehr En-Passant geschlagen werden kann, müssen wir den Hash ändern
-        if move.undone_advanced_two_last_move != None:
-            pos = move.undone_advanced_two_last_move
+        if move.undone_advanced_two_last_move != None and move.undone_advanced_two_last_move != move.captured:
+            pawn = move.undone_advanced_two_last_move
             # Bauern der En-Passant geschlagen werden kann raus-XORen
-            new_hash ^= self.zobrist_table[pos[0] * 8 + pos[1]][self.get_zobrist_piece_value(self.board[pos[0]][pos[1]]) + 8]
+            new_hash ^= self.zobrist_table[pawn.pos[0] * 8 + pawn.pos[1]][self.get_zobrist_piece_value(pawn) + 8]
             # Bauern der nicht En-Passant geschlagen werden kann ein-XORen
-            new_hash ^= self.zobrist_table[pos[0] * 8 + pos[1]][self.get_zobrist_piece_value(self.board[pos[0]][pos[1]])]
+            new_hash ^= self.zobrist_table[pawn.pos[0] * 8 + pawn.pos[1]][self.get_zobrist_piece_value(pawn)]
 
         return new_hash
 
@@ -246,6 +248,7 @@ class Board:
 
             if possible_pawn != None and isinstance(possible_pawn, Pawn) and possible_pawn.color != self.turn:
                 possible_pawn.advanced_two_last_move = True
+                self.en_passantable_pawn = possible_pawn
             else:
                 raise ValueError(f"Invalid FEN-String: Invalid En Passant Square {strings[3]} (must be a square where a pawn of the other color can be captured)")
         
@@ -268,13 +271,38 @@ class Board:
     
     # überprüft, ob eine Farbe in Schach ist
     def is_in_check(self, color : int) -> bool:
-        king = [x for x in self.pieces if isinstance(x, King) and x.color == color][0]
-        enemy_pieces = [x for x in self.pieces if x.color != color]
+        king = self.kings[color]
 
-        return any(x.attacks_square(king.pos, self.board) for x in enemy_pieces)
+        potential_rooks_and_queens = king.get_straight_moves(self.board)
+        for move in potential_rooks_and_queens:
+            if isinstance(move.captured, (Rook, Queen)):
+                return True
+
+        potential_bishops_and_queens = king.get_diagonal_moves(self.board)
+        for move in potential_bishops_and_queens:
+            if isinstance(move.captured, (Bishop, Queen)):
+                return True
+        
+        potential_knights = king.get_knight_moves(self.board)
+        for move in potential_knights:
+            if isinstance(move.captured, Knight):
+                return True
+        
+        potential_pawns = king.get_pawn_moves(self.board)
+        for move in potential_pawns:
+            if isinstance(move.captured, Pawn):
+                return True
+        
+        potential_kings = king.get_moves(self.board)
+        for move in potential_kings:
+            if isinstance(move.captured, King):
+                return True
+
+        return False
+
 
     # gibt alle legalen Züge einer Figur zurück
-    def get_legitimate_moves_from_piece(self, piece : Piece) -> list:
+    def get_legal_moves_from_piece(self, piece : Piece) -> list:
         if not piece in self.pieces:
             raise ValueError("Piece not on board")
         
@@ -283,25 +311,24 @@ class Board:
         king = [x for x in self.pieces if isinstance(x, King) and x.color == piece.color][0]
 
         for move in piece.get_moves(self.board):
-            self.do_move(move)
-            enemy_pieces = [x for x in self.pieces if x.color != piece.color]
-            if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces):
+            self.do_move(move, False)
+            if not self.is_in_check(piece.color):
                 moves.append(move)
 
-            self.undo_move(move)
+            self.undo_move(move, False)
         
         return moves
 
     # gibt alle legalen Züge einer Figur zurück
-    def get_legitimate_moves_from_pos(self, pos : tuple) -> list:
-        self.get_legitimate_moves_from_piece(self.board[pos[0]][pos[1]])
+    def get_legal_moves_from_pos(self, pos : tuple) -> list:
+        self.get_legal_moves_from_piece(self.board[pos[0]][pos[1]])
 
-    # gibt alle legitimen Züge eines Spielers zurück
+    # gibt alle legalen Züge eines Spielers zurück
     # wenn die Liste leer ist, dann ist der Spieler Schachmatt
-    def get_legitimate_moves(self, color : int) -> list:
+    def get_legal_moves(self, color : int) -> list:
         moves = []
 
-        king = [x for x in self.pieces if isinstance(x, King) and x.color == self.turn][0]
+        king = self.kings[color]
         own_pieces = [x for x in self.pieces if x.color == color]
         enemy_pieces = [x for x in self.pieces if x.color != color]
 
@@ -310,27 +337,30 @@ class Board:
 
         for piece in own_pieces:
             for move in piece.get_moves(self.board):
-                self.do_move(move)
+                self.do_move(move, False)
 
                 # Wenn der König bewegt wurde, müssen alle gegnerischen Figuren betrachtet werden
                 if isinstance(self.board[move.to[0]][move.to[1]], King):
-                    if not any(x.attacks_square(king.pos, self.board) for x in enemy_pieces if move.captured != x):
+                    if not self.is_in_check(color):
                         moves.append(move)
                 else:
                     if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers if move.captured != x):
                         moves.append(move)
 
-                self.undo_move(move)
+                self.undo_move(move, False)
             
         return moves
     
     # führt einen Zug aus
-    def do_move(self, move : Move):
+    def do_move(self, move : Move, update_hash : bool = True):
         if self.board[move.fr[0]][move.fr[1]] == None:
             raise ValueError("Piece does not exist")
 
         if move.captured != None:
             self.pieces.remove(move.captured)
+            if move.captured == self.en_passantable_pawn:
+                move.undone_advanced_two_last_move = self.en_passantable_pawn
+                self.en_passantable_pawn = None
         
         moving_piece = self.board[move.fr[0]][move.fr[1]]
         self.board[move.to[0]][move.to[1]] = moving_piece
@@ -339,7 +369,12 @@ class Board:
         moving_piece.moved = True
 
         if isinstance(move, Pawn_Double_Move):
+            if self.en_passantable_pawn != None:
+                self.en_passantable_pawn.advanced_two_last_move = False
+                move.undone_advanced_two_last_move = self.en_passantable_pawn
+            
             moving_piece.advanced_two_last_move = True
+            self.en_passantable_pawn = moving_piece
         elif isinstance(move, Castling_Move):
             castling_rook = self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]]
             self.board[move.castling_rook_to[0]][move.castling_rook_to[1]] = castling_rook
@@ -353,32 +388,30 @@ class Board:
         elif isinstance(move, En_Passant_Move):
             self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = None
         
-        for piece in self.pieces:
-            if isinstance(piece, Pawn):
-                if piece.advanced_two_last_move:
-                    piece.advanced_two_last_move = False
-                    move.undone_advanced_two_last_move = piece.pos
-                    break
+        if self.en_passantable_pawn != None and self.en_passantable_pawn != move.captured:
+            if self.en_passantable_pawn != moving_piece or not isinstance(move, Pawn_Double_Move):
+                self.en_passantable_pawn.advanced_two_last_move = False
+                move.undone_advanced_two_last_move = self.en_passantable_pawn
+                self.en_passantable_pawn = None
         
         self.turn = 1 - self.turn
 
         self.move_history.append(move)
 
-        move.hash_before = self.hash
-        self.hash = self.get_hash_after_move(move)
-
-        self.repetition_table[self.hash] += 1
+        if update_hash:
+            move.hash_before = self.hash
+            self.hash = self.get_hash_after_move(move)
+            self.repetition_table[self.hash] += 1
     
     # macht einen Zug rückgängig
-    def undo_move(self, move : Move):
+    def undo_move(self, move : Move, update_hash : bool = True):
         if move != self.move_history[-1]:
             raise ValueError("Can only undo last move")
         
-        self.repetition_table[self.hash] -= 1
-
-        if move.undone_advanced_two_last_move != None:
-            pos = move.undone_advanced_two_last_move
-            self.board[pos[0]][pos[1]].advanced_two_last_move = True
+        if update_hash:
+            self.repetition_table[self.hash] -= 1
+            if self.repetition_table[self.hash] == 0:
+                self.repetition_table.pop(self.hash)
         
         moving_piece = self.board[move.to[0]][move.to[1]]
 
@@ -387,13 +420,13 @@ class Board:
         moving_piece.pos = move.fr
         moving_piece.moved = not move.first_move
 
-        if move.captured != None:
+        if move.captured != None and not isinstance(move, En_Passant_Move):
             self.board[move.to[0]][move.to[1]] = move.captured
             move.captured.pos = move.to
             self.pieces.append(move.captured)
-        
         if isinstance(move, Pawn_Double_Move):
             moving_piece.advanced_two_last_move = False
+            self.en_passantable_pawn = None
         elif isinstance(move, Castling_Move):
             castling_rook = self.board[move.castling_rook_to[0]][move.castling_rook_to[1]]
             self.board[move.castling_rook_fr[0]][move.castling_rook_fr[1]] = castling_rook
@@ -410,11 +443,17 @@ class Board:
             move.captured.advanced_two_last_move = True
             self.pieces.append(move.captured)
         
+        if move.undone_advanced_two_last_move != None:
+            pawn = move.undone_advanced_two_last_move
+            pawn.advanced_two_last_move = True
+            self.en_passantable_pawn = pawn
+        
         self.turn = 1 - self.turn
 
-        if move.hash_before != None:
-            self.hash = move.hash_before
-        else:
-            self.hash = self.__hash__()
+        if update_hash:
+            if move.hash_before != None:
+                self.hash = move.hash_before
+            else:
+                self.hash = self.__hash__()
 
         self.move_history.pop()

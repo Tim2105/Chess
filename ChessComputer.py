@@ -181,9 +181,9 @@ class ChessComputer:
                     break
             
             if capture_move != None:
-                board.do_move(capture_move)
+                board.do_move(capture_move, False)
                 value = max(0, self.piece_value[type(capture_move.captured)] - self.see(board, pos))
-                board.undo_move(capture_move)
+                board.undo_move(capture_move, False)
         
         return value
     
@@ -234,8 +234,8 @@ class ChessComputer:
             # soweit an den gegnersichen König bewegen wie möglich
             endgame_weight = exp(0.15 * len(board.pieces))
 
-            own_king = [piece for piece in own_pieces if isinstance(piece, King)][0]
-            other_king = [piece for piece in other_pieces if isinstance(piece, King)][0]
+            own_king = board.kings[color]
+            other_king = board.kings[1 - color]
 
             other_king_dst_to_centre = max(max(3 - other_king.pos[0], other_king.pos[0] - 4), max(3 - other_king.pos[1], other_king.pos[1] - 4))
             king_distance = max(abs(own_king.pos[0] - other_king.pos[0]), abs(own_king.pos[1] - other_king.pos[1]))
@@ -282,7 +282,7 @@ class ChessComputer:
 
         for move in moves_copy.copy():
             if move.captured != None:
-                board.do_move(move)
+                board.do_move(move, False)
                 val = self.piece_value[type(move.captured)] - self.see(board, move.to)
                 if val >= 0:
                     winning_captures.append(move)
@@ -290,7 +290,7 @@ class ChessComputer:
                 else:
                     losing_captures.append(move)
                     moves_copy.remove(move)
-                board.undo_move(move)
+                board.undo_move(move, False)
             elif not quiescence_order:
                 if move in self.killer_moves[depth - 1]:
                     # wenn Killer-Züge unter den zu sortierenden Zügen sind, merke diese
@@ -330,8 +330,8 @@ class ChessComputer:
             if alpha >= beta:
                 return tt_entry.value
 
-        own_king = [x for x in board.pieces if isinstance(x, King) and x.color == board.turn][0]
-        other_king = [x for x in board.pieces if isinstance(x, King) and x.color != board.turn][0]
+        own_king = board.kings[board.turn]
+        other_king = board.kings[1 - board.turn]
         own_pieces = [x for x in board.pieces if x.color == board.turn]
         other_pieces = [x for x in board.pieces if x.color != board.turn]
 
@@ -355,19 +355,19 @@ class ChessComputer:
             if val > alpha:
                 alpha = val
 
-            for move in board.get_legitimate_moves(board.turn):
+            for move in board.get_legal_moves(board.turn):
                 if move.captured != None:
                     moves.append(move)
                 elif depth > 0:
-                    board.do_move(move)
+                    board.do_move(move, False)
 
-                    if any(x.attacks_square(other_king.pos, board.board) for x in own_pieces):
+                    if board.is_in_check(board.turn):
                         moves.append(move)
 
-                    board.undo_move(move)
+                    board.undo_move(move, False)
         else:
             # Wenn wir im Schach sind, simulieren wir alle Züge, die uns aus dem Schach befördern(wenn möglich)
-            moves = board.get_legitimate_moves(board.turn)
+            moves = board.get_legal_moves(board.turn)
             if len(moves) == 0:
                 score = 0
                 # überprüfe, ob wir Schachmatt oder Patt sind
@@ -440,11 +440,11 @@ class ChessComputer:
         b = beta
         i = 0
 
-        moves = board.get_legitimate_moves(board.turn)
+        moves = board.get_legal_moves(board.turn)
 
         if len(moves) == 0:
             score = 0
-            own_king = [x for x in board.pieces if x.color == board.turn and isinstance(x, King)][0]
+            own_king = board.kings[board.turn]
             other_pieces = [x for x in board.pieces if x.color != board.turn]
             # sind wir Schachmatt oder Patt?
             if any(piece.attacks_square(own_king.pos, board.board) for piece in other_pieces):

@@ -1,4 +1,21 @@
-from Move import *
+# Klasse, die einen regulären Schachzug kapselt
+class Move:
+    def __init__(self, from_pos : tuple, to_pos : tuple):
+        self.fr = from_pos
+        self.to = to_pos
+        self.captured = None
+        self.first_move = False
+        self.undone_advanced_two_last_move = None
+        self.hash_before = None
+    
+    def __str__(self):
+        return f"{chr(self.fr[0] + 65)}{self.fr[1] + 1} -> {chr(self.to[0] + 65)}{self.to[1] + 1}"
+    
+    def __eq__(self, o):
+        if not type(o) is Move:
+            return False
+        
+        return self.fr == o.fr and self.to == o.to and self.first_move == o.first_move and self.captured == o.captured
 
 # Oberklasse für alle Figuren
 class Piece:
@@ -134,6 +151,68 @@ class Piece:
     def attacks_square_on_empty_board(self, square : tuple) -> bool:
         raise NotImplementedError("attacks_square_on_empty_board not implemented on " + str(type(self)))
 
+
+# Klasse, die einen Rochadenzug kapselt
+class Castling_Move(Move):
+    def __init__(self, from_pos : tuple, to_pos : tuple, castling_rook_fr : tuple, castling_rook_to : tuple):
+        super().__init__(from_pos, to_pos)
+        self.castling_rook_fr = castling_rook_fr
+        self.castling_rook_to = castling_rook_to
+    
+    def __eq__(self, o):
+        if not type(o) is Castling_Move:
+            return False
+        
+        return self.fr == o.fr and self.to == o.to and self.castling_rook_fr == o.castling_rook_fr and self.castling_rook_to == o.castling_rook_to and self.first_move == o.first_move
+    
+    def __str__(self):
+        return super().__str__()
+
+# Klasse, die einen En Passant Zug kapselt
+class En_Passant_Move(Move):
+    def __init__(self, from_pos : tuple, to_pos : tuple, en_passant_pos : tuple):
+        super().__init__(from_pos, to_pos)
+        self.en_passant_pos = en_passant_pos
+    
+    def __eq__(self, o):
+        if not type(o) is En_Passant_Move:
+            return False
+        
+        return self.fr == o.fr and self.to == o.to and self.en_passant_pos == o.en_passant_pos and self.captured == o.captured
+    
+    def __str__(self):
+        return super().__str__()
+
+# Klasse, die eine Bauernaufwertung kapselt
+class Promotion_Move(Move):
+    def __init__(self, from_pos : tuple, to_pos : tuple, promotion_piece : Piece, promoted_piece : Piece):
+        super().__init__(from_pos, to_pos)
+        self.promotion_piece = promotion_piece
+        self.promoted_piece = promoted_piece
+    
+    def __str__(self):
+        return f"{super().__str__()} -> {type(self.promotion_piece).__name__}"
+    
+    def __eq__(self, o):
+        if not type(o) is Promotion_Move:
+            return False
+        
+        return self.fr == o.fr and self.to == o.to and type(self.promotion_piece) == type(o.promotion_piece) and self.captured == o.captured
+
+# Klasse, die einen Doppelzug eines Bauern kapselt
+class Pawn_Double_Move(Move):
+    def __init__(self, from_pos : tuple, to_pos : tuple):
+        super().__init__(from_pos, to_pos)
+    
+    def __eq__(self, o):
+        if not type(o) is Pawn_Double_Move:
+            return False
+        
+        return self.fr == o.fr and self.to == o.to
+    
+    def __str__(self):
+        return super().__str__()
+
 # Bauer
 class Pawn(Piece):
     def __init__(self, color : int, pos : tuple):
@@ -150,83 +229,47 @@ class Pawn(Piece):
     def get_moves(self, board : list) -> list:
         moves = []
 
-        if self.color == 0:
-            if self.pos[1] >= 7:
-                return moves
+        forward = 1 if self.color == 0 else -1
 
-            if board[self.pos[0]][self.pos[1] + 1] == None:
-                moves.append(Move(self.pos, (self.pos[0], self.pos[1] + 1)))
+        pos_y = self.pos[1] + forward
+        pos_2y = self.pos[1] + 2 * forward
 
-                # Erster Zug vom Bauern
-                if not self.moved:
-                    if board[self.pos[0]][self.pos[1] + 2] == None:
-                        moves.append(Pawn_Double_Move(self.pos, (self.pos[0], self.pos[1] + 2)))
-                
-            # Schlagen
-            if self.pos[0] > 0 and board[self.pos[0] - 1][self.pos[1] + 1] != None and board[self.pos[0] - 1][self.pos[1] + 1].color != self.color:
-                move = Move(self.pos, (self.pos[0] - 1, self.pos[1] + 1))
-                move.captured = board[self.pos[0] - 1][self.pos[1] + 1]
-                moves.append(move)
+        if board[self.pos[0]][pos_y] == None:
+            moves.append(Move(self.pos, (self.pos[0], pos_y)))
+
+            # Erster Zug vom Bauern
+            if not self.moved:
+                if board[self.pos[0]][pos_2y] == None:
+                    moves.append(Pawn_Double_Move(self.pos, (self.pos[0], pos_2y)))
             
-            if self.pos[0] < 7 and board[self.pos[0] + 1][self.pos[1] + 1] != None and board[self.pos[0] + 1][self.pos[1] + 1].color != self.color:
-                move = Move(self.pos, (self.pos[0] + 1, self.pos[1] + 1))
-                move.captured = board[self.pos[0] + 1][self.pos[1] + 1]
-                moves.append(move)
+        # Schlagen
+        if self.pos[0] > 0 and board[self.pos[0] - 1][pos_y] != None and board[self.pos[0] - 1][pos_y].color != self.color:
+            move = Move(self.pos, (self.pos[0] - 1, pos_y))
+            move.captured = board[self.pos[0] - 1][pos_y]
+            moves.append(move)
+        
+        if self.pos[0] < 7 and board[self.pos[0] + 1][pos_y] != None and board[self.pos[0] + 1][pos_y].color != self.color:
+            move = Move(self.pos, (self.pos[0] + 1, pos_y))
+            move.captured = board[self.pos[0] + 1][pos_y]
+            moves.append(move)
 
-            # En Passant
-            if self.pos[1] == 4:
-                if self.pos[0] > 0:
-                    en_passant_pawn = board[self.pos[0] - 1][self.pos[1]]
-                    if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
-                        move = En_Passant_Move(self.pos, (self.pos[0] - 1, self.pos[1] + 1), (self.pos[0] - 1, self.pos[1]))
-                        move.captured = en_passant_pawn
-                        moves.append(move)
-                
-                if self.pos[0] < 7:
-                    en_passant_pawn = board[self.pos[0] + 1][self.pos[1]]
-                    if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
-                        move = En_Passant_Move(self.pos, (self.pos[0] + 1, self.pos[1] + 1), (self.pos[0] + 1, self.pos[1]))
-                        move.captured = en_passant_pawn
-                        moves.append(move)
+        en_passant_y = 4 if self.color == 0 else 3
 
-        else:
-            if self.pos[1] <= 0:
-                return moves
-
-            if board[self.pos[0]][self.pos[1] - 1] == None:
-                moves.append(Move(self.pos, (self.pos[0], self.pos[1] - 1)))
-
-                # Erster Zug vom Bauern
-                if not self.moved:
-                    if board[self.pos[0]][self.pos[1] - 2] == None:
-                        moves.append(Pawn_Double_Move(self.pos, (self.pos[0], self.pos[1] - 2)))
-                
-            # Schlagen
-            if self.pos[0] > 0 and board[self.pos[0] - 1][self.pos[1] - 1] != None and board[self.pos[0] - 1][self.pos[1] - 1].color != self.color:
-                move = Move(self.pos, (self.pos[0] - 1, self.pos[1] - 1))
-                move.captured = board[self.pos[0] - 1][self.pos[1] - 1]
-                moves.append(move)
-
-            if self.pos[0] < 7 and board[self.pos[0] + 1][self.pos[1] - 1] != None and board[self.pos[0] + 1][self.pos[1] - 1].color != self.color:
-                move = Move(self.pos, (self.pos[0] + 1, self.pos[1] - 1))
-                move.captured = board[self.pos[0] + 1][self.pos[1] - 1]
-                moves.append(move)
+        # En Passant
+        if self.pos[1] == en_passant_y:
+            if self.pos[0] > 0:
+                en_passant_pawn = board[self.pos[0] - 1][self.pos[1]]
+                if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
+                    move = En_Passant_Move(self.pos, (self.pos[0] - 1, pos_y), (self.pos[0] - 1, self.pos[1]))
+                    move.captured = en_passant_pawn
+                    moves.append(move)
             
-            # En Passant
-            if self.pos[1] == 3:
-                if self.pos[0] > 0:
-                    en_passant_pawn = board[self.pos[0] - 1][self.pos[1]]
-                    if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
-                        move = En_Passant_Move(self.pos, (self.pos[0] - 1, self.pos[1] - 1), (self.pos[0] - 1, self.pos[1]))
-                        move.captured = en_passant_pawn
-                        moves.append(move)
-                
-                if self.pos[0] < 7:
-                    en_passant_pawn = board[self.pos[0] + 1][self.pos[1]]
-                    if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
-                        move = En_Passant_Move(self.pos, (self.pos[0] + 1, self.pos[1] - 1), (self.pos[0] + 1, self.pos[1]))
-                        move.captured = en_passant_pawn
-                        moves.append(move)
+            if self.pos[0] < 7:
+                en_passant_pawn = board[self.pos[0] + 1][self.pos[1]]
+                if en_passant_pawn != None and en_passant_pawn.color != self.color and isinstance(en_passant_pawn, Pawn) and en_passant_pawn.advanced_two_last_move:
+                    move = En_Passant_Move(self.pos, (self.pos[0] + 1, pos_y), (self.pos[0] + 1, self.pos[1]))
+                    move.captured = en_passant_pawn
+                    moves.append(move)
 
         # Mache aus allen Umwandlungen Promotion_Moves
         # iteriere über eine Kopie aller Züge, damit wir die Originalliste verändern können
@@ -235,21 +278,24 @@ class Pawn(Piece):
                 # Bauern können in Damen, Türmen, Läufern und Springer umwandeln
                 queen_move = Promotion_Move(move.fr, move.to, Queen(self.color, move.to), self)
                 queen_move.captured = move.captured
+                queen_move.promotion_piece.moved = True
                 moves.append(queen_move)
                 rook_move = Promotion_Move(move.fr, move.to, Rook(self.color, move.to), self)
                 rook_move.captured = move.captured
+                rook_move.promotion_piece.moved = True
                 moves.append(rook_move)
                 bishop_move = Promotion_Move(move.fr, move.to, Bishop(self.color, move.to), self)
                 bishop_move.captured = move.captured
+                bishop_move.promotion_piece.moved = True
                 moves.append(bishop_move)
                 knight_move = Promotion_Move(move.fr, move.to, Knight(self.color, move.to), self)
                 knight_move.captured = move.captured
+                knight_move.promotion_piece.moved = True
                 moves.append(knight_move)
 
                 # entferne den alten Zug
                 moves.remove(move)
                 
-
         self.set_first_move_in_list(moves)
 
         return moves
@@ -437,6 +483,7 @@ class Queen(Piece):
 # König
 class King(Piece):
     directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+    knight_directions = [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]
 
     def get_moves(self, board : list) -> list:
         moves = []
@@ -508,6 +555,56 @@ class King(Piece):
 
         return moves
     
+    def get_knight_moves(self, board : list) -> list:
+        moves = []
+
+        for direction in King.knight_directions:
+            if self.pos[0] + direction[0] > 7 or self.pos[0] + direction[0] < 0:
+                continue
+            if self.pos[1] + direction[1] > 7 or self.pos[1] + direction[1] < 0:
+                continue
+            if board[self.pos[0] + direction[0]][self.pos[1] + direction[1]] != None:
+                if board[self.pos[0] + direction[0]][self.pos[1] + direction[1]].color != self.color:
+                    move = Move(self.pos, (self.pos[0] + direction[0], self.pos[1] + direction[1]))
+                    move.captured = board[self.pos[0] + direction[0]][self.pos[1] + direction[1]]
+                    moves.append(move)
+                continue
+            else:
+                moves.append(Move(self.pos, (self.pos[0] + direction[0], self.pos[1] + direction[1])))
+
+        return moves
+    
+    def get_pawn_moves(self, board : list) -> list:
+        moves = []
+
+        if self.color == 0:
+            if self.pos[1] >= 6:
+                return moves
+        else:
+            if self.pos[1] <= 1:
+                return moves
+
+
+        forward = 1 if self.color == 0 else -1
+        pos_y = self.pos[1] + forward
+
+        # Uns interessieren nur Schlagzüge
+        if self.pos[0] > 0:
+            piece = board[self.pos[0] - 1][pos_y]
+            if piece != None and piece.color != self.color:
+                move = Move(self.pos, (self.pos[0] - 1, pos_y))
+                move.captured = piece
+                moves.append(move)
+        
+        if self.pos[0] < 7:
+            piece = board[self.pos[0] + 1][pos_y]
+            if piece != None and piece.color != self.color:
+                move = Move(self.pos, (self.pos[0] + 1, pos_y))
+                move.captured = piece
+                moves.append(move)
+
+        return moves
+
     # überprüft, ob diese Figur auf von einem Feld auf ein anderes Feld ziehen kann und es somit "angreift"
     def attacks_square(self, square : tuple, board : list):
         col_diff = abs(square[0] - self.pos[0])
