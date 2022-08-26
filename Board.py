@@ -271,34 +271,10 @@ class Board:
     
     # überprüft, ob eine Farbe in Schach ist
     def is_in_check(self, color : int) -> bool:
-        king = self.kings[color]
+        other_pieces = [x for x in self.pieces if x.color != color]
+        own_king = self.kings[color]
 
-        potential_rooks_and_queens = king.get_straight_moves(self.board)
-        for move in potential_rooks_and_queens:
-            if isinstance(move.captured, (Rook, Queen)):
-                return True
-
-        potential_bishops_and_queens = king.get_diagonal_moves(self.board)
-        for move in potential_bishops_and_queens:
-            if isinstance(move.captured, (Bishop, Queen)):
-                return True
-        
-        potential_knights = king.get_knight_moves(self.board)
-        for move in potential_knights:
-            if isinstance(move.captured, Knight):
-                return True
-        
-        potential_pawns = king.get_pawn_moves(self.board)
-        for move in potential_pawns:
-            if isinstance(move.captured, Pawn):
-                return True
-        
-        potential_kings = king.get_moves(self.board)
-        for move in potential_kings:
-            if isinstance(move.captured, King):
-                return True
-
-        return False
+        return any(piece.attacks_square(own_king.pos, self.board) for piece in other_pieces)
 
 
     # gibt alle legalen Züge einer Figur zurück

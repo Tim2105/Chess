@@ -119,7 +119,7 @@ class ChessComputer:
 
     MATE_SCORE : int = 100000
     INFINITY : int = 1 << 32
-    MAX_QUIESCENCE_CHECK_DEPTH : int = 2
+    MAX_QUIESCENCE_CHECK_DEPTH : int = 4
 
     def __init__(self):
         self.searching = False
@@ -342,7 +342,7 @@ class ChessComputer:
         own_pieces = [x for x in board.pieces if x.color == board.turn]
         other_pieces = [x for x in board.pieces if x.color != board.turn]
 
-        check = any(x.attacks_square(own_king.pos, board.board) for x in other_pieces)
+        check = board.is_in_check(board.turn)
         moves = []
 
         if not check:
@@ -362,7 +362,16 @@ class ChessComputer:
             if val > alpha:
                 alpha = val
 
-            for move in board.get_legal_moves(board.turn):
+            legal_moves = board.get_legal_moves(board.turn)
+
+            # Wenn wir nicht im Schach stehtn und keine legalen Züge haben, sind wir Patt
+            if len(legal_moves) == 0:
+                if board.hash not in self.transposition_table:
+                    tt_entry = Transposition_Table_Entry(0, -1, Transposition_Table_Entry_Type.QUIESCENT)
+                    self.transposition_table[board.hash] = tt_entry
+                return 0
+
+            for move in legal_moves:
                 if move.captured != None:
                     moves.append(move)
                 elif depth > 0:
@@ -374,12 +383,10 @@ class ChessComputer:
                     board.undo_move(move, False)
         else:
             # Wenn wir im Schach sind, simulieren wir alle Züge, die uns aus dem Schach befördern(wenn möglich)
+            # Wenn es keine legalen Züge gibt, sind wir Schachmatt
             moves = board.get_legal_moves(board.turn)
             if len(moves) == 0:
-                score = 0
-                # überprüfe, ob wir Schachmatt oder Patt sind
-                if any(piece.attacks_square(own_king.pos, board.board) for piece in other_pieces):
-                    score = -self.MATE_SCORE
+                score = -self.MATE_SCORE + self.curr_depth
                 if board.hash not in self.transposition_table:
                     tt_entry = Transposition_Table_Entry(score, -1, Transposition_Table_Entry_Type.QUIESCENT)
                     self.transposition_table[board.hash] = tt_entry
@@ -454,7 +461,7 @@ class ChessComputer:
             own_king = board.kings[board.turn]
             other_pieces = [x for x in board.pieces if x.color != board.turn]
             # sind wir Schachmatt oder Patt?
-            if any(piece.attacks_square(own_king.pos, board.board) for piece in other_pieces):
+            if board.is_in_check(board.turn):
                 score = -self.MATE_SCORE + (self.curr_depth - depth)
             
             tt_entry = Transposition_Table_Entry(score, depth, Transposition_Table_Entry_Type.EXACT)
@@ -535,6 +542,7 @@ class ChessComputer:
         self.last_search_interrupted = False
         self.mate_found = False
         self.killer_moves = []
+        self.transposition_table.clear()
 
         timer = Timer(search_time, self.stop_search)
         timer.start()
@@ -546,11 +554,10 @@ class ChessComputer:
 
             val = self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY)
 
-            # Statusmeldung ausgeben
+            # Statusmeldung ausgeben und besten Zug abspeichern
             if not self.last_search_interrupted:
                 print(f"Depth: {self.curr_depth:2d} | Nodes visited: {self.nodes_visited:6d} | Transpositions: {self.transpositions:6d} | Value: {val:6d} | Best move: {self.transposition_table[board.hash].move}")
-
-            self.best_move = self.transposition_table[board.hash].move
+                self.best_move = self.transposition_table[board.hash].move
 
             # Wenn wir Matt gefunden haben, können wir abbrechen
             if self.mate_found:
