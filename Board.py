@@ -297,7 +297,7 @@ class Board:
 
     # gibt alle legalen Züge einer Figur zurück
     def get_legal_moves_from_pos(self, pos : tuple) -> list:
-        self.get_legal_moves_from_piece(self.board[pos[0]][pos[1]])
+        return self.get_legal_moves_from_piece(self.board[pos[0]][pos[1]])
 
     # gibt alle legalen Züge eines Spielers zurück
     # wenn die Liste leer ist, dann ist der Spieler Schachmatt

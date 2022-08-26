@@ -232,7 +232,7 @@ class ChessComputer:
         if endgame and own_piece_value != other_piece_value:
             # Im Endspiel möchte der Spieler mit mehr Material seinen König
             # soweit an den gegnersichen König bewegen wie möglich
-            endgame_weight = exp(0.15 * len(board.pieces))
+            endgame_weight = 8 - exp(0.065 * len(board.pieces))
 
             own_king = board.kings[color]
             other_king = board.kings[1 - color]
