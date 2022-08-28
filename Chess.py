@@ -12,13 +12,13 @@ def pick_move(board : Board) -> Board.Move:
 WHITE = 0
 BLACK = 1
 
-starting_board = Board.Board("7k/3R2pq/pb3N1p/1p4Q1/5p2/1PP2P1P/1P4PK/4r3 w - - 0 1")
+starting_board = Board.Board("8/1k6/1p6/8/2P5/PK6/8/8 w - - 0 1")
 
 cp = ChessComputer.ChessComputer()
 
 while True:
-    p_move = pick_move(starting_board)
-    starting_board.do_move(p_move)
     cp_move = cp.get_move(starting_board)
     print(f"Move played: {cp_move}")
     starting_board.do_move(cp_move)
+    p_move = pick_move(starting_board)
+    starting_board.do_move(p_move)

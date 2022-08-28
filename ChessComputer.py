@@ -98,9 +98,18 @@ class ChessComputer:
     }
 
     # Piece-Square Tables für das Endspiel
-    # nur relevant für den König
+    # nur relevant für König und Bauern
     pst_endgame = {
-        Pawn : pst_midgame[Pawn],
+        Pawn : [
+            [  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 80, 80, 80, 80, 80, 80, 80, 80],
+            [ 40, 40, 50, 50, 50, 50, 40, 40],
+            [ 15, 15, 20, 30, 30, 20, 15, 15],
+            [  0,  0,  0, 20, 20,  0,  0,  0],
+            [  5, -5,-10,  0,  0,-10, -5,  5],
+            [  5, 10, 10,-20,-20, 10, 10,  5],
+            [  0,  0,  0,  0,  0,  0,  0,  0]
+        ],
         Knight : pst_midgame[Knight],
         Bishop : pst_midgame[Bishop],
         Rook : pst_midgame[Rook],
@@ -316,7 +325,7 @@ class ChessComputer:
 
 
     # Quiescence-Suche
-    # Traversiert den Spielbaum nur noch mit Schlagzügen
+    # Traversiert den Spielbaum nur noch mit Schlagzügen, Züge die den Gegner in Schach setzen und Bauernaufwertungen
     def quiescence(self, board : Board, depth : int, alpha : int, beta : int) -> int:
         self.nodes_visited += 1
 
@@ -373,6 +382,8 @@ class ChessComputer:
 
             for move in legal_moves:
                 if move.captured != None:
+                    moves.append(move)
+                elif isinstance(move, Promotion_Move):
                     moves.append(move)
                 elif depth > 0:
                     board.do_move(move, False)
@@ -478,7 +489,7 @@ class ChessComputer:
             val = -self.alpha_beta(board, depth - 1, -b, -alpha)
 
             # Wenn die Nullfenstersuche fehlgeschlagen ist, müssen wir mit regulärem Fenster neu suchen
-            if val > alpha and val < beta and i > 1 and depth > 1:
+            if val > alpha and val < beta and i > 1 and depth < self.curr_depth:
                 val = -self.alpha_beta(board, depth - 1, -beta, -val)
 
             if board.is_draw_by_repetition():
