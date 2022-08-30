@@ -192,7 +192,7 @@ class ChessComputer:
             if capture_move != None:
                 board.do_move(capture_move, False)
                 value = max(0, self.piece_value[type(capture_move.captured)] - self.see(board, pos))
-                board.undo_move(capture_move, False)
+                board.undo_move(False)
         
         return value
     
@@ -306,7 +306,7 @@ class ChessComputer:
                         losing_captures.append(move)
                         moves_copy.remove(move)
                         
-                board.undo_move(move, False)
+                board.undo_move(False)
             elif not quiescence_order:
                 if move in self.killer_moves[depth - 1]:
                     # wenn Killer-Züge unter den zu sortierenden Zügen sind, merke diese
@@ -391,7 +391,7 @@ class ChessComputer:
                     if board.is_in_check(board.turn):
                         moves.append(move)
 
-                    board.undo_move(move, False)
+                    board.undo_move(False)
         else:
             # Wenn wir im Schach sind, simulieren wir alle Züge, die uns aus dem Schach befördern(wenn möglich)
             # Wenn es keine legalen Züge gibt, sind wir Schachmatt
@@ -409,7 +409,7 @@ class ChessComputer:
         for move in self.order_moves(moves, board, 0, True):
             board.do_move(move)
             val = -self.quiescence(board, depth - 1, -beta, -alpha)
-            board.undo_move(move)
+            board.undo_move()
             if val >= beta:
                 return beta
             
@@ -495,7 +495,7 @@ class ChessComputer:
             if board.is_draw_by_repetition():
                 val = max(0, val)
 
-            board.undo_move(move)
+            board.undo_move()
 
             # Beta-Schnitt
             if val >= beta:

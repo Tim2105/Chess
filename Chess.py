@@ -12,7 +12,7 @@ def pick_move(board : Board) -> Board.Move:
 WHITE = 0
 BLACK = 1
 
-starting_board = Board.Board()
+starting_board = Board.Board("8/P7/8/8/8/6pn/5pkb/K4nb1 w - - 0 1")
 
 cp = ChessComputer.ChessComputer()
 
