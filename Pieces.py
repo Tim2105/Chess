@@ -1,22 +1,20 @@
 import os
 import pygame
+from ChessUtils import *
+from Board import *
+from Screen import *
 
 class Pieces(pygame.sprite.Sprite):
-    def __init__(self, filename, cols, rows):
+    def __init__(self, filename, cols, rows, board):
+        self.board = board
         pygame.sprite.Sprite.__init__(self)
-        self.pieces = {
-            "white_pawn":   5,
-            "white_knight": 3,
-            "white_bishop": 2,
-            "white_rook":   4,
-            "white_king":   0,
-            "white_queen":  1,
-            "black_pawn":   11,
-            "black_knight": 9,
-            "black_bishop": 8,
-            "black_rook":   10,
-            "black_king":   6,
-            "black_queen":  7
+        self.index = {
+            King: 0,
+            Queen: 1,
+            Bishop: 2,
+            Knight: 3,
+            Rook: 4,
+            Pawn: 5
         }
         self.spritesheet = pygame.image.load(filename).convert_alpha()
 
@@ -30,6 +28,9 @@ class Pieces(pygame.sprite.Sprite):
 
         self.cells = list([(i % cols * w, i // cols * h, w, h) for i in range(self.cell_count)])
 
-    def draw(self, surface, piece_name, coords):
-        piece_index = self.pieces[piece_name]
-        surface.blit(self.spritesheet, coords, self.cells[piece_index])
+    def draw(self, screen, piece):
+        self.piece_index = self.index[type(piece)] + 6 * (piece.color)
+        x, y = piece.pos
+        x = x * 80
+        y = 690 - (y + 1)* 80
+        screen.blit(self.spritesheet, (x, y), self.cells[self.piece_index])

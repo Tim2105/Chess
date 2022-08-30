@@ -33,7 +33,7 @@ class Piece:
         
         return self.color == o.color and self.pos == o.pos and self.moved == o.moved
     
-    # Aktualisiert das first_move-Attribut in allen Zügen in der Liste
+    # Aktualisiert dias first_move-Attribut in allen Zügen in der Liste
     def set_first_move_in_list(self, moves : list):
         for move in moves:
             move.first_move = not self.moved

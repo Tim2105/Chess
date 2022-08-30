@@ -98,9 +98,18 @@ class ChessComputer:
     }
 
     # Piece-Square Tables für das Endspiel
-    # nur relevant für den König
+    # nur relevant für König und Bauern
     pst_endgame = {
-        Pawn : pst_midgame[Pawn],
+        Pawn : [
+            [  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 80, 80, 80, 80, 80, 80, 80, 80],
+            [ 40, 40, 50, 50, 50, 50, 40, 40],
+            [ 15, 15, 20, 30, 30, 20, 15, 15],
+            [  0,  0,  0, 20, 20,  0,  0,  0],
+            [  5, -5,-10,  0,  0,-10, -5,  5],
+            [  5, 10, 10,-20,-20, 10, 10,  5],
+            [  0,  0,  0,  0,  0,  0,  0,  0]
+        ],
         Knight : pst_midgame[Knight],
         Bishop : pst_midgame[Bishop],
         Rook : pst_midgame[Rook],
@@ -183,7 +192,7 @@ class ChessComputer:
             if capture_move != None:
                 board.do_move(capture_move, False)
                 value = max(0, self.piece_value[type(capture_move.captured)] - self.see(board, pos))
-                board.undo_move(capture_move, False)
+                board.undo_move(False)
         
         return value
     
@@ -232,7 +241,7 @@ class ChessComputer:
         if endgame and own_piece_value != other_piece_value:
             # Im Endspiel möchte der Spieler mit mehr Material seinen König
             # soweit an den gegnersichen König bewegen wie möglich
-            endgame_weight = exp(0.15 * len(board.pieces))
+            endgame_weight = 8 - exp(0.065 * len(board.pieces))
 
             own_king = board.kings[color]
             other_king = board.kings[1 - color]
@@ -297,7 +306,7 @@ class ChessComputer:
                         losing_captures.append(move)
                         moves_copy.remove(move)
                         
-                board.undo_move(move, False)
+                board.undo_move(False)
             elif not quiescence_order:
                 if move in self.killer_moves[depth - 1]:
                     # wenn Killer-Züge unter den zu sortierenden Zügen sind, merke diese
@@ -316,7 +325,7 @@ class ChessComputer:
 
 
     # Quiescence-Suche
-    # Traversiert den Spielbaum nur noch mit Schlagzügen
+    # Traversiert den Spielbaum nur noch mit Schlagzügen, Züge die den Gegner in Schach setzen und Bauernaufwertungen
     def quiescence(self, board : Board, depth : int, alpha : int, beta : int) -> int:
         self.nodes_visited += 1
 
@@ -374,13 +383,15 @@ class ChessComputer:
             for move in legal_moves:
                 if move.captured != None:
                     moves.append(move)
+                elif isinstance(move, Promotion_Move):
+                    moves.append(move)
                 elif depth > 0:
                     board.do_move(move, False)
 
                     if board.is_in_check(board.turn):
                         moves.append(move)
 
-                    board.undo_move(move, False)
+                    board.undo_move(False)
         else:
             # Wenn wir im Schach sind, simulieren wir alle Züge, die uns aus dem Schach befördern(wenn möglich)
             # Wenn es keine legalen Züge gibt, sind wir Schachmatt
@@ -398,7 +409,7 @@ class ChessComputer:
         for move in self.order_moves(moves, board, 0, True):
             board.do_move(move)
             val = -self.quiescence(board, depth - 1, -beta, -alpha)
-            board.undo_move(move)
+            board.undo_move()
             if val >= beta:
                 return beta
             
@@ -478,13 +489,13 @@ class ChessComputer:
             val = -self.alpha_beta(board, depth - 1, -b, -alpha)
 
             # Wenn die Nullfenstersuche fehlgeschlagen ist, müssen wir mit regulärem Fenster neu suchen
-            if val > alpha and val < beta and i > 1 and depth > 1:
+            if val > alpha and val < beta and i > 1 and depth < self.curr_depth:
                 val = -self.alpha_beta(board, depth - 1, -beta, -val)
 
             if board.is_draw_by_repetition():
                 val = max(0, val)
 
-            board.undo_move(move)
+            board.undo_move()
 
             # Beta-Schnitt
             if val >= beta:

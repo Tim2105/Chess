@@ -1,322 +1,160 @@
 import pygame
 from pygame.locals import *
-import random
 
 from Pieces import Pieces
-from Utiliti import Utiliti
 from Board import *
+from ChessUtils import *
 
-import time
 
 class Draw(object):
-    def __init__(self, screen, pieces_src, square_coords, square_length):
-        
+    def __init__(self, screen, pieces_src, square_length, board):
+        self.board = board
         # display surface
         self.screen = screen
-        # create an object of class to show chess pieces on the board
-        self.chess_pieces = Pieces(pieces_src, 6, 2)
-        # store coordinates of the chess board squares
-        self.board_locations = square_coords
-        # length of the side of a chess board square
+        self.board = board
         self.square_length = square_length
-        # dictionary to keeping track of player turn
-        self.turn = {"black": 1, "white": 0}
+        self.pieces_src = pieces_src
+        # create an object of class to show chess pieces on the board
+        self.chess_pieces = Pieces(self.pieces_src, 6, 2, self.board)   
 
-        # list containing possible moves for the selected piece
-        self.moves = []
-        #
-        self.utiliti = Utiliti()
-
-        # mapping of piece names to index of list containing piece coordinates on spritesheet
-        self.pieces = {
-            "white_pawn":   5,
-            "white_knight": 3,
-            "white_bishop": 2,
-            "white_rook":   4,
-            "white_king":   0,
-            "white_queen":  1,
-            "black_pawn":   11,
-            "black_knight": 9,
-            "black_bishop": 8,
-            "black_rook":   10,
-            "black_king":   6,
-            "black_queen":  7
-        }
-
-        # list containing captured pieces
-        self.captured = []
-        self.winner = ""
-        self.reset()
-    
-    def reset(self):
-        # clear moves lists
-        self.moves = []
-
-        self.turn["black"] = 0
-        self.turn["white"] = 1
-
-        # two dimensonal dictionary containing details about each board location
-        # storage format is [piece_name, currently_selected, x_y_coordinate]
-        self.piece_location = {}
-        x = 0
-        for i in range(65, 73):
-            a = 8
-            y = 0
-            self.piece_location[chr(i)] = {}
-            while a>0:
-                # [piece name, currently selected, board coordinates]
-                self.piece_location[chr(i)][a] = ["", False, [x,y]]
-                a = a - 1
-                y = y + 1
-            x = x + 1
-
-        # reset the board
-        for i in range(65, 73):
-            x = 8
-            while x>0:
-                if(x==8):
-                    if(chr(i)=='A' or chr(i)=='H'):
-                        self.piece_location[chr(i)][x][0] = "black_rook"
-                    elif(chr(i)=='B' or chr(i)=='G'):
-                        self.piece_location[chr(i)][x][0] = "black_knight"
-                    elif(chr(i)=='C' or chr(i)=='F'):
-                        self.piece_location[chr(i)][x][0] = "black_bishop"
-                    elif(chr(i)=='D'):
-                        self.piece_location[chr(i)][x][0] = "black_queen"
-                    elif(chr(i)=='E'):
-                        self.piece_location[chr(i)][x][0] = "black_king"
-                elif(x==7):
-                    self.piece_location[chr(i)][x][0] = "black_pawn"
-                elif(x==2):
-                    self.piece_location[chr(i)][x][0] = "white_pawn"
-                elif(x==1):
-                    if(chr(i)=='A' or chr(i)=='H'):
-                        self.piece_location[chr(i)][x][0] = "white_rook"
-                    elif(chr(i)=='B' or chr(i)=='G'):
-                        self.piece_location[chr(i)][x][0] = "white_knight"
-                    elif(chr(i)=='C' or chr(i)=='F'):
-                        self.piece_location[chr(i)][x][0] = "white_bishop"
-                    elif(chr(i)=='D'):
-                        self.piece_location[chr(i)][x][0] = "white_queen"
-                    elif(chr(i)=='E'):
-                        self.piece_location[chr(i)][x][0] = "white_king"
-                x = x - 1
-
-
-    # 
-    def play_turn(self):
+    def draw_turn(self):
         # white color
-        white_color = (255, 255, 255)
+        white_color = (0, 0, 0)
         # create fonts for texts
         small_font = pygame.font.SysFont("comicsansms", 20)
         # create text to be shown on the game menu
-        if self.turn["black"]:
-            turn_text = small_font.render("Turn: Black", True, white_color)
-        elif self.turn["white"]:
-            turn_text = small_font.render("Turn: White", True, white_color)
+        if self.board.turn == 0:
+            turn_text = small_font.render("Weiß ist am Zug", True, white_color)
+        elif self.board.turn == 1:
+            turn_text = small_font.render("Schwarz ist am Zug", True, white_color)
         
         # show welcome text
-        self.screen.blit(turn_text, 
-                      ((self.screen.get_width() - turn_text.get_width()) // 2,
-                      10))
-        
-        # let player with black piece play
-        if(self.turn["black"]):
-            self.move_piece("black")
-        # let player with white piece play
-        elif(self.turn["white"]):
-            self.move_piece("white")
+        self.screen.blit(turn_text, ((self.screen.get_width() - turn_text.get_width()) // 2, 10))
 
-    # method to draw pieces on the chess board
-    def draw_pieces(self):
+    # Methode für die Gamelogik
+    def gamelogic_two_player(self):
         transparent_green = (0,194,39,170)
         transparent_blue = (28,21,212,170)
 
-        # create a transparent surface
         surface = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
         surface.fill(transparent_green)
 
         surface1 = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
         surface1.fill(transparent_blue)
+        for piece in self.board.pieces:
+            self.chess_pieces.draw(self.screen, piece)
+        pygame.display.flip()
 
-        # loop to change background color of selected piece
-        for val in self.piece_location.values():
-            for value in val.values() :
-                # name of the piece in the current location
-                piece_name = value[0]
-                # x, y coordinates of the current piece
-                piece_coord_x, piece_coord_y = value[2]
-
-                # change background color of piece if it is selected
-                if value[1] and len(value[0]) > 5:
-                    # if the piece selected is a black piece
-                    if value[0][:5] == "black":
-                        self.screen.blit(surface, self.board_locations[piece_coord_x][piece_coord_y])
-                        if len(self.moves) > 0:
-                            for move in self.moves:
-                                x_coord = move[0]
-                                y_coord = move[1]
-                                if x_coord >= 0 and y_coord >= 0 and x_coord < 8 and y_coord < 8:
-                                    self.screen.blit(surface, self.board_locations[x_coord][y_coord])
-                    # if the piece selected is a white piece
-                    elif value[0][:5] == "white":
-                        self.screen.blit(surface1, self.board_locations[piece_coord_x][piece_coord_y])
-                        if len(self.moves) > 0:
-                            for move in self.moves:
-                                x_coord = move[0]
-                                y_coord = move[1]
-                                if x_coord >= 0 and y_coord >= 0 and x_coord < 8 and y_coord < 8:
-                                    self.screen.blit(surface1, self.board_locations[x_coord][y_coord])
-        
-        # draw all chess pieces
-        for val in self.piece_location.values():
-            for value in val.values() :
-                # name of the piece in the current location
-                piece_name = value[0]
-                # x, y coordinates of the current piece
-                piece_coord_x, piece_coord_y = value[2]
-                # check if there is a piece at the square
-                if(len(value[0]) > 1):
-                    # draw piece on the board
-                    self.chess_pieces.draw(self.screen, piece_name, self.board_locations[piece_coord_x][piece_coord_y])
-
-    def move_piece(self, turn):
-        # get the coordinates of the square selected on the board
-        square = self.get_selected_square()
-
-        # if a square was selected
-        if square:
-            # get name of piece on the selected square
-            piece_name = square[0]
-            # color of piece on the selected square
-            piece_color = piece_name[:5]
-            # board column character
-            columnChar = square[1]
-            # board row number
-            rowNo = square[2]
-
-            # get x, y coordinates
-            x, y = self.piece_location[columnChar][rowNo][2]
-
-            # if there's a piece on the selected square
-            if(len(piece_name) > 0) and (piece_color == turn):
-                # find possible moves for thr piece
-                self.moves = Board.get_legal_moves_from_pos((x,y))
-
-            # checkmate mechanism
-            p = self.piece_location[columnChar][rowNo]
-
-            for i in self.moves:
-                if i == [x, y]:
-                    if(p[0][:5] == turn) or len(p[0]) == 0:
-                        self.validate_move([x,y])
-                    else:
-                        self.capture_piece(turn, [columnChar, rowNo], [x,y])
-
-            # only the player with the turn gets to play
-            if(piece_color == turn):
-                # change selection flag from all other pieces
-                for k in self.piece_location.keys():
-                    for key in self.piece_location[k].keys():
-                        self.piece_location[k][key][1] = False
-
-                # change selection flag of the selected piece
-                self.piece_location[columnChar][rowNo][1] = True
-                
+        selected_Square_x, selected_Square_y = self.get_selected_square()
+        move = None
+        if self.board.board[selected_Square_x][selected_Square_y] != None and self.board.board[selected_Square_x][selected_Square_y].color == self.board.turn:
+            self.legalMoves = self.board.get_legal_moves_from_pos((selected_Square_x, selected_Square_y))
+            self.screen.blit(surface, (selected_Square_x*80, (7-selected_Square_y)*80+50))
+            for legal in self.legalMoves:
+                self.screen.blit(surface1, (legal.to[0]*80, (7-legal.to[1])*80+50))
+            for piece in self.board.pieces:
+                self.chess_pieces.draw(self.screen, piece)
+            pygame.display.flip()
             
+            move_to_square_x, move_to_square_y = self.get_selected_square()
+            print(move_to_square_x, move_to_square_y)
+            isBreak=True
+            for possible_move in self.legalMoves:
+                if isBreak:
+                    if (selected_Square_x, selected_Square_y) == possible_move.fr and (move_to_square_x, move_to_square_y) == possible_move.to:
+                        move = possible_move
+                        print("sdfas")
+                        if isinstance(self.board.board[selected_Square_x][selected_Square_y], Pawn):
+                            print("sdasd")
+                            if move_to_square_y == 0 or move_to_square_y == 7:
+                                print("sdf")
+                                promo = self.promotion()
+                                for legal in self.legalMoves:
+                                    if move.fr == legal.fr and isinstance(legal.promotion_piece, promo):
+                                        move = legal
+                                        isBreak = False
+                                        break
+                        if move != None:
+                            print("moive")
+                            self.board.do_move(move)
+                            isBreak = False
+                else:
+                    break         
+        for piece in self.board.pieces:
+            self.chess_pieces.draw(self.screen, piece)
+        pygame.display.flip()      
+
+    def draw_computer(self):
+        for piece in self.board.pieces:
+            self.chess_pieces.draw(self.screen, piece)  
+        pygame.display.flip()  
+
+    def promotion(self):
+        #Definition der Farben und Schriftart und Größe
+        print("Promotion")
+        background_color = (139,69,19)
+        self.screen.fill(background_color)
+        black_color = (0,0,0)
+        white = (255,255,255)
+        font = pygame.font.SysFont('comicsansms', 20)
+        #Position der Button
+        queen = pygame.Rect(220, 110, 200, 50)
+        rook = pygame.Rect(220, 220, 200, 50)
+        bishop = pygame.Rect(220, 330, 200, 50)
+        knight = pygame.Rect(220, 440, 200, 50)
+        #Initialisierung der Button
+        pygame.draw.rect(self.screen, black_color, queen)
+        pygame.draw.rect(self.screen, black_color, rook)
+        pygame.draw.rect(self.screen, black_color, bishop)
+        pygame.draw.rect(self.screen, black_color, knight)
+        #Text auf dem Button
+        queen_label = font.render("Dame", True, white)
+        rook_label = font.render("Turm", True, white)
+        bishop_label = font.render("Läufer", True, white)
+        knight_label = font.render("Springer", True, white)
+        #Position des Textes auf dem Button
+        self.screen.blit(queen_label, (queen.x + (queen.width - queen_label.get_width()) // 2, queen.y + (queen.height - queen_label.get_height()) // 2))
+        self.screen.blit(rook_label, (rook.x + (rook.width - rook_label.get_width()) // 2, rook.y + (rook.height - rook_label.get_height()) // 2))
+        self.screen.blit(bishop_label, (bishop.x + (bishop.width - bishop_label.get_width()) // 2, bishop.y + (bishop.height - bishop_label.get_height()) // 2))
+        self.screen.blit(knight_label, (knight.x + (knight.width - knight_label.get_width()) // 2, knight.y + (knight.height - knight_label.get_height()) // 2))
+        pygame.display.flip()
+        #Auswahl des Buttons
+        while True:
+            mouseposition = self.get_mouse_pos()
+            if queen.collidepoint(mouseposition):
+                pygame.draw.rect(self.screen, white, queen, 3)
+                return Queen
+            elif rook.collidepoint(mouseposition):
+                pygame.draw.rect(self.screen, white, rook, 3)
+                return Rook
+            elif bishop.collidepoint(mouseposition):
+                pygame.draw.rect(self.screen, white, bishop, 3)
+                return Bishop
+            elif knight.collidepoint(mouseposition):
+                pygame.draw.rect(self.screen, white, knight, 3)
+                return Knight
+            
+    #Methode zum bestimmen des Feldes eines Linksklicks
     def get_selected_square(self):
-        # get left event
-        left_click = self.utiliti.left_click_event()
+        pygame.event.clear()
+        event = pygame.event.wait()
+        while pygame.MOUSEBUTTONDOWN != event.type:
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+            event = pygame.event.wait()
 
-        # if there's a mouse event
-        if left_click:
-            # get mouse event
-            mouse_event = self.utiliti.get_mouse_event()
+        mousepos = pygame.mouse.get_pos()
+        return (mousepos[0]//80, ((690 - mousepos[1])//80))
 
-            for i in range(len(self.board_locations)):
-                for j in range(len(self.board_locations)):
-                    rect = pygame.Rect(self.board_locations[i][j][0], self.board_locations[i][j][1], 
-                            self.square_length, self.square_length)
-                    collision = rect.collidepoint(mouse_event[0], mouse_event[1])
-                    if collision:
-                        selected = [rect.x, rect.y]
-                        # find x, y coordinates the selected square
-                        for k in range(len(self.board_locations)):
-                            #
-                            try:
-                                l = None
-                                l = self.board_locations[k].index(selected)
-                                if l != None:
-                                    #reset color of all selected pieces
-                                    for val in self.piece_location.values():
-                                        for value in val.values() :
-                                            # [piece name, currently selected, board coordinates]
-                                            if not value[1]:
-                                                value[1] = False
+    def get_mouse_pos(self):
+        pygame.event.clear()
+        event = pygame.event.wait()
+        while pygame.MOUSEBUTTONDOWN != event.type:
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+            event = pygame.event.wait()
 
-                                    # get column character and row number of the chess piece
-                                    columnChar = chr(65 + k)
-                                    rowNo = 8 - l
-                                    # get the name of the 
-                                    piece_name = self.piece_location[columnChar][rowNo][0]
-                                    
-                                    return [piece_name, columnChar, rowNo]
-                            except:
-                                pass
-        else:
-            return None
-
-
-    def capture_piece(self, turn, chess_board_coord, piece_coord):
-        # get x, y coordinate of the destination piece
-        x, y = piece_coord
-
-        # get chess board coordinate
-        columnChar, rowNo = chess_board_coord
-
-        p = self.piece_location[columnChar][rowNo]
-        
-        if p[0] == "white_king":
-            self.winner = "Black"
-            print("Black wins")
-        elif p[0] == "black_king":
-            self.winner = "White"
-            print("White wins")
-
-        # add the captured piece to list
-        self.captured.append(p)
-        # move source piece to its destination
-        self.validate_move(piece_coord)
-
-
-    def validate_move(self, destination):
-        desColChar = chr(65 + destination[0])
-        desRowNo = 8 - destination[1]
-
-        for k in self.piece_location.keys():
-            for key in self.piece_location[k].keys():
-                board_piece = self.piece_location[k][key]
-
-                if board_piece[1]:
-                    # unselect the source piece
-                    self.piece_location[k][key][1] = False
-                    # get the name of the source piece
-                    piece_name = self.piece_location[k][key][0]
-                    # move the source piece to the destination piece
-                    self.piece_location[desColChar][desRowNo][0] = piece_name
-                    
-                    src_name = self.piece_location[k][key][0]
-                    # remove source piece from its current position
-                    self.piece_location[k][key][0] = ""
-
-                    # change turn
-                    if(self.turn["black"]):
-                        self.turn["black"] = 0
-                        self.turn["white"] = 1
-                    elif("white"):
-                        self.turn["black"] = 1
-                        self.turn["white"] = 0
-
-                    src_location = k + str(key)
-                    des_location = desColChar + str(desRowNo)
-                    print("{} moved from {} to {}".format(src_name,  src_location, des_location))    
+        mousepos = pygame.mouse.get_pos()
+        return mousepos

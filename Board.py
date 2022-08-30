@@ -291,7 +291,7 @@ class Board:
             if not self.is_in_check(piece.color):
                 moves.append(move)
 
-            self.undo_move(move, False)
+            self.undo_move(False)
         
         return moves
 
@@ -323,7 +323,7 @@ class Board:
                     if not any(x.attacks_square(king.pos, self.board) for x in potential_enemy_attackers if move.captured != x):
                         moves.append(move)
 
-                self.undo_move(move, False)
+                self.undo_move(False)
             
         return moves
     
@@ -380,9 +380,8 @@ class Board:
             self.repetition_table[self.hash] += 1
     
     # macht einen Zug rückgängig
-    def undo_move(self, move : Move, update_hash : bool = True):
-        if move != self.move_history[-1]:
-            raise ValueError("Can only undo last move")
+    def undo_move(self, update_hash : bool = True):
+        move = self.move_history.pop()
         
         if update_hash:
             self.repetition_table[self.hash] -= 1
@@ -411,7 +410,7 @@ class Board:
         elif isinstance(move, Promotion_Move):
             self.board[move.fr[0]][move.fr[1]] = move.promoted_piece
             move.promoted_piece.pos = move.fr
-            self.pieces.remove(move.promotion_piece)
+            self.pieces.remove(moving_piece)
             self.pieces.append(move.promoted_piece)
         elif isinstance(move, En_Passant_Move):
             self.board[move.en_passant_pos[0]][move.en_passant_pos[1]] = move.captured
@@ -431,5 +430,3 @@ class Board:
                 self.hash = move.hash_before
             else:
                 self.hash = self.__hash__()
-
-        self.move_history.pop()
