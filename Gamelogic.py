@@ -20,7 +20,7 @@ class Gamelogic(object):
     def draw_turn(self):
         white_color = (0, 0, 0)
         small_font = pygame.font.SysFont("comicsansms", 20)
-        if self.board.turn == 0 and self.board.is_in_check(self.board.turn):
+        if self.board.turn == 0 and  self.board.is_in_check(self.board.turn):
             turn_text = small_font.render("Weiß ist am Zug und im Schach!", True, white_color)
         elif self.board.turn == 1 and self.board.is_in_check(self.board.turn):
             turn_text = small_font.render("Schwarz ist am Zug und im Schach!", True, white_color)

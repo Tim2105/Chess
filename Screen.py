@@ -4,8 +4,10 @@ import os
 from pygame.locals import *
 from ChessComputer import ChessComputer
 from Draw_Pieces import *
-from Gamelogic import *
 from Board import *
+from Gamelogic import *
+
+
 
 class Screen:
     def __init__(self):
@@ -136,6 +138,10 @@ class Screen:
         elif len(self.board.get_legal_moves(self.board.turn)) == 0 and not self.board.is_in_check(self.board.turn):
             self.unentschieden = True
             return True
+        elif self.board.is_draw_by_repetition():
+            self.unentschieden = True
+            return True
+
     #Zwei Spieler spielen aufruf der Funktionen die benötigt werden
     def two_player(self):
         color = (155, 155, 155)
@@ -176,9 +182,9 @@ class Screen:
         big_font = pygame.font.SysFont('comicsansms', 50)
         small_font = pygame.font.SysFont('comicsansms', 20)
         #Text der angezeigt werden soll wer gewonnen hat
-        if self.board.turn == 1:
+        if self.board.turn == 1 and self.unentschieden == False:
             text = "Weiß hat gewonnen!"
-        elif self.board.turn == 0:
+        elif self.board.turn == 0 and self.unentschieden == False:
             text = "Schwarz hat gewonnen!"
         elif self.unentschieden == True:
             text = "Unentschieden!"
