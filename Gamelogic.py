@@ -1,7 +1,7 @@
 import pygame
 from pygame.locals import *
 
-from Pieces import Pieces
+from Draw_Pieces import *
 from Board import *
 from ChessUtils import *
 
@@ -14,13 +14,17 @@ class Gamelogic(object):
         self.board = board
         self.square_length = square_length
         self.pieces_src = pieces_src
-        self.chess_pieces = Pieces(self.pieces_src, 6, 2, self.board)  
+        self.chess_pieces = Draw_pieces(self.pieces_src, 6, 2, self.board)  
 
     #Methode zum zeichnen welche Farbe dran ist
     def draw_turn(self):
         white_color = (0, 0, 0)
         small_font = pygame.font.SysFont("comicsansms", 20)
-        if self.board.turn == 0:
+        if self.board.turn == 0 and self.board.is_in_check(self.board.turn):
+            turn_text = small_font.render("Weiß ist am Zug und im Schach!", True, white_color)
+        elif self.board.turn == 1 and self.board.is_in_check(self.board.turn):
+            turn_text = small_font.render("Schwarz ist am Zug und im Schach!", True, white_color)
+        elif self.board.turn == 0:
             turn_text = small_font.render("Weiß ist am Zug", True, white_color)
         elif self.board.turn == 1:
             turn_text = small_font.render("Schwarz ist am Zug", True, white_color)
@@ -28,59 +32,82 @@ class Gamelogic(object):
 
     # Methode für die Gamelogik
     def gamelogic_two_player(self):
-        #Definieren der Farben
-        transparent_green = (0,194,39,170)
-        transparent_blue = (28,21,212,170)
-        surface = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
-        surface.fill(transparent_green)
-        surface1 = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
-        surface1.fill(transparent_blue)
-
+        self.define_colors()
         self.draw_pieces()
-
         #Ausgewähltes Feld bestimmen und ob es eine gültige Figur ist
-        selected_Square_x, selected_Square_y = self.get_selected_square()
-        move = None
+        self.selected_Square_x, self.selected_Square_y = self.get_selected_square()
+        self.move = None
 
-        if self.board.board[selected_Square_x][selected_Square_y] != None and self.board.board[selected_Square_x][selected_Square_y].color == self.board.turn:
-            self.legalMoves = self.board.get_legal_moves_from_pos((selected_Square_x, selected_Square_y))
-            self.screen.blit(surface, (selected_Square_x*80, (7-selected_Square_y)*80+50))
+        if self.is_selection_legal():
+            self.legalMoves = self.board.get_legal_moves_from_pos((self.selected_Square_x, self.selected_Square_y))
+            self.screen.blit(self.surface, (self.selected_Square_x*80, (7-self.selected_Square_y)*80+50))
 
-            for legal in self.legalMoves:
-                self.screen.blit(surface1, (legal.to[0]*80, (7-legal.to[1])*80+50))
-            self.draw_pieces()
-
+            self.draw_legal_moves()
             #Zug bestimmen und ausführen wenn der Zug gültig ist
-            move_to_square_x, move_to_square_y = self.get_selected_square()
+            self.move_to_square_x, self.move_to_square_y = self.get_selected_square()
             isBreak=True
-            for possible_move in self.legalMoves:
+            for self.possible_move in self.legalMoves:
                 if isBreak:
-                    if (selected_Square_x, selected_Square_y) == possible_move.fr and (move_to_square_x, move_to_square_y) == possible_move.to:
-                        move = possible_move
-
-                        if isinstance(self.board.board[selected_Square_x][selected_Square_y], Pawn):
-                            if move_to_square_y == 0 or move_to_square_y == 7:
-                                promo = self.promotion()
-
-                                for legal in self.legalMoves:
-                                    if move.fr == legal.fr and isinstance(legal.promotion_piece, promo):
-                                        move = legal
-                                        isBreak = False
-                                        break
-
-                        if move != None:
-                            self.board.do_move(move)
+                    if self.turn_possible():
+                        self.move = self.possible_move
+                        self.search_for_promotion()
+                        if self.move != None:
+                            self.board.do_move(self.move)
                             isBreak = False
                 else:
                     break    
-
         self.draw_pieces()
+        pygame.display.flip()
+
+    def define_colors(self):
+        #Definieren der Farben
+        self.transparent_green = (0,194,39,170)
+        self.transparent_blue = (28,21,212,170)
+        self.surface = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
+        self.surface.fill(self.transparent_green)
+        self.surface1 = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
+        self.surface1.fill(self.transparent_blue)
+
+    def search_for_promotion(self):
+        if self.selected_piece_is_pawn():
+            if self.is_pawn_on_boarder():
+                self.promo = self.if_promotion()
+                for self.legal in self.legalMoves:
+                    if self.is_promotion_move():
+                        self.move = self.legal
+                        isBreak = False
+                        break
 
     #Zeichnen der Spielfiguren nachdem der Computer den Zug gemacht hat
-    def draw_computer(self, move):
-        self.board.do_move(move)
+    def draw_computer(self, computer_move):
+        self.board.do_move(computer_move)
         self.draw_pieces()  
     
+    def turn_possible(self)->bool:
+        if (self.selected_Square_x, self.selected_Square_y) == self.possible_move.fr and (self.move_to_square_x, self.move_to_square_y) == self.possible_move.to:
+            return True
+
+    def selected_piece_is_pawn(self)->bool:
+        if isinstance(self.board.board[self.selected_Square_x][self.selected_Square_y], Pawn):
+            return True
+
+    def is_promotion_move(self)->bool:
+        if self.move.fr == self.legal.fr and isinstance(self.legal.promotion_piece, self.promo):
+            return True
+
+    def is_pawn_on_boarder(self)->bool:
+        if self.move_to_square_y == 0 or self.move_to_square_y == 7:
+            return True
+
+    def is_selection_legal(self)->bool:
+        if self.board.board[self.selected_Square_x][self.selected_Square_y] != None and self.board.board[self.selected_Square_x][self.selected_Square_y].color == self.board.turn:
+            return True
+
+    def draw_legal_moves(self):
+        for self.legal in self.legalMoves:
+            self.screen.blit(self.surface1, (self.legal.to[0]*80, (7-self.legal.to[1])*80+50))
+        self.draw_pieces()
+
     #Zeichnen der Spielfiguren
     def draw_pieces(self):
         for piece in self.board.pieces:
@@ -88,9 +115,8 @@ class Gamelogic(object):
         pygame.display.flip()
 
     #Hilfsmethoden für die Promotion zur auswahl der Figur
-    def promotion(self):
+    def if_promotion(self):
         #Definition der Farben und Schriftart und Größe
-        print("Promotion")
         background_color = (139,69,19)
         self.screen.fill(background_color)
         black_color = (0,0,0)

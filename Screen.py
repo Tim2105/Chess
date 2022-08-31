@@ -5,6 +5,7 @@ from pygame.locals import *
 from ChessComputer import ChessComputer
 from Draw_Pieces import *
 from Gamelogic import *
+from Board import *
 
 class Screen:
     def __init__(self):
@@ -21,6 +22,7 @@ class Screen:
         #Solange die Variable true ist soll das Spiel laufen
         self.running = True
         self.Solo = False
+        self.unentschieden = False
         #Rescourcen laden
         self.sources = "res" 
         #Bildschirm Aktualisierungsrate
@@ -35,38 +37,43 @@ class Screen:
 
     #Spiel Schleife
     def start_game(self):
-        self.board_X = 0
-        self.board_Y = 50
-        self.board_Width = (self.board_X, self.board_Y)
-        board_src = os.path.join(self.sources, "board.png")
-        self.boardLoad = pygame.image.load(board_src).convert()
-        
-        self.pieces_src = os.path.join(self.sources, "figuren.png")
-        self.pieces_con = pygame.image.load(self.pieces_src).convert()
-
-        self.draw = Gamelogic(self.screen, self.pieces_src, self.square_Length, self.board)
-
+        self.initiate_board()
         #Schleife die solange ausführt wie das Programm laufen soll
         while self.running:
             self.clock.tick(5)
-            for event in pygame.event.get():
+            self.close_window()
+            self.running_game()
+        pygame.quit()
+
+    def initiate_board(self):
+        self.board_X = 0
+        self.board_Y = 50
+        self.board_Width = (self.board_X, self.board_Y)
+        self.board_src = os.path.join(self.sources, "board.png")
+        self.boardLoad = pygame.image.load(self.board_src).convert()
+        
+        self.pieces_src = os.path.join(self.sources, "figuren.png")
+        self.pieces_con = pygame.image.load(self.pieces_src).convert()
+        self.draw = Gamelogic(self.screen, self.pieces_src, self.square_Length, self.board)
+
+    def close_window(self):
+        for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-            
-            if self.menu_showed == False:
-                pygame.display.flip()
-                self.show_menu()
-            elif self.get_winner(): 
-                self.when_winner()
-            elif self.Solo == True:
-                self.solo_game()
-            else:
-                self.two_player()
 
+    def running_game(self):
+        if self.menu_showed == False:
             pygame.display.flip()
-            pygame.event.pump()
+            self.show_menu()
+        elif self.get_winner(): 
+            self.when_winner()
+        elif self.Solo == True:
+            self.solo_game()
+        else:
+            self.two_player()
 
-        pygame.quit()
+        pygame.display.flip()
+        pygame.event.pump()
 
     #Menü anzeigen
     def show_menu(self):
@@ -125,7 +132,9 @@ class Screen:
     #Bestimmen ob es einen Gewinner gibt
     def get_winner(self) -> bool:
         if len(self.board.get_legal_moves(self.board.turn)) == 0 and self.board.is_in_check(self.board.turn):
-            print("ad")
+            return True
+        elif len(self.board.get_legal_moves(self.board.turn)) == 0 and not self.board.is_in_check(self.board.turn):
+            self.unentschieden = True
             return True
     #Zwei Spieler spielen aufruf der Funktionen die benötigt werden
     def two_player(self):
@@ -169,8 +178,11 @@ class Screen:
         #Text der angezeigt werden soll wer gewonnen hat
         if self.board.turn == 1:
             text = "Weiß hat gewonnen!"
-        else:
+        elif self.board.turn == 0:
             text = "Schwarz hat gewonnen!"
+        elif self.unentschieden == True:
+            text = "Unentschieden!"
+
         #Text anzeigen und Button anzeigen
         winner_text = big_font.render(text, False, black_color)
         reset_label = "Menü"
@@ -186,6 +198,7 @@ class Screen:
                 self.menu_showed = False
                 self.board = Board()
                 self.draw = Gamelogic(self.screen, self.pieces_src, self.square_Length, self.board)
+                self.unentschieden = False
                 pygame.display.flip()
 
     #Bestimmen der Mauskoordinaten
