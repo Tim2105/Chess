@@ -3,7 +3,7 @@ import pygame
 import os
 from pygame.locals import *
 from ChessComputer import ChessComputer
-from Pieces import *
+from Draw_Pieces import *
 from Gamelogic import *
 
 class Screen:
