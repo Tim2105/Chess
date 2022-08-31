@@ -2,7 +2,7 @@ import os
 import pygame
 from ChessUtils import *
 from Board import *
-from Screen import *
+from UserInput import *
 #Zeichnen einzelner Figuren
 class Draw_pieces(pygame.sprite.Sprite):
     #Initialisieren

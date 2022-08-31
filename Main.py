@@ -1,8 +1,8 @@
-from Screen import Screen
+from Gamelogic import Gamelogic
 import pygame
 #initialisieren von Pygame
 pygame.init()
 #Erstellen eines Screens
-screen = Screen()
+screen = Gamelogic()
 #Hauptschleife
 screen.start_game()
