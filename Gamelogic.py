@@ -7,8 +7,6 @@ from Draw_Pieces import *
 from Board import *
 from UserInput import *
 
-
-
 class Gamelogic:
     def __init__(self):
         #Initialisiere pygame und das Board Objekt
@@ -154,22 +152,26 @@ class Gamelogic:
 
     #Solo Spieler spielen aufruf der Funktionen die benötigt werden
     def solo_game(self):
-        color = (155, 155, 155)
-        self.screen.fill(color)
-        self.screen.blit(self.boardLoad, self.board_Width)
-        self.draw.draw_turn()
+        self.rebuild_board()
         self.draw.gamelogic_two_player()
         pygame.display.flip()
 
     #Computer spielt, 
     def computer(self):
-        pygame.display.flip()
+        self.rebuild_board()
         chesscomputer = ChessComputer()
         chesscomputermove = chesscomputer.get_move(self.board)
         if chesscomputermove == None:
             return
         self.draw.draw_computer(chesscomputermove)
 
+    def rebuild_board(self):
+        color = (155, 155, 155)
+        self.screen.fill(color)
+        self.screen.blit(self.boardLoad, self.board_Width)
+        self.draw.draw_turn()
+        pygame.display.flip()
+    
     #Wenn es einen Gewinner gibt, wird dieser angezeigt
     def when_winner(self):
         #Hintergrundfarbe und Schriftart

@@ -29,6 +29,7 @@ class UserInput(object):
         elif self.board.turn == 1:
             turn_text = small_font.render("Schwarz ist am Zug", True, white_color)
         self.screen.blit(turn_text, ((self.screen.get_width() - turn_text.get_width()) // 2, 10))
+        self.draw_pieces()
 
     # Methode für die Gamelogik
     def gamelogic_two_player(self):
