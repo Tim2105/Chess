@@ -36,10 +36,7 @@ class Draw(object):
         surface1 = pygame.Surface((self.square_length, self.square_length), pygame.SRCALPHA)
         surface1.fill(transparent_blue)
 
-        #Zeichnen der Spielfiguren
-        for piece in self.board.pieces:
-            self.chess_pieces.draw(self.screen, piece)
-        pygame.display.flip()
+        self.draw_pieces()
 
         #Ausgewähltes Feld bestimmen und ob es eine gültige Figur ist
         selected_Square_x, selected_Square_y = self.get_selected_square()
@@ -51,9 +48,7 @@ class Draw(object):
 
             for legal in self.legalMoves:
                 self.screen.blit(surface1, (legal.to[0]*80, (7-legal.to[1])*80+50))
-            for piece in self.board.pieces:
-                self.chess_pieces.draw(self.screen, piece)
-            pygame.display.flip()
+            self.draw_pieces()
 
             #Zug bestimmen und ausführen wenn der Zug gültig ist
             move_to_square_x, move_to_square_y = self.get_selected_square()
@@ -79,16 +74,19 @@ class Draw(object):
                 else:
                     break    
 
-        for piece in self.board.pieces:
-            self.chess_pieces.draw(self.screen, piece)
-        pygame.display.flip()      
+        self.draw_pieces()
 
     #Zeichnen der Spielfiguren nachdem der Computer den Zug gemacht hat
-    def draw_computer(self):
-        for piece in self.board.pieces:
-            self.chess_pieces.draw(self.screen, piece)  
-        pygame.display.flip()  
+    def draw_computer(self, move):
+        self.board.do_move(move)
+        self.draw_pieces()  
     
+    #Zeichnen der Spielfiguren
+    def draw_pieces(self):
+        for piece in self.board.pieces:
+            self.chess_pieces.draw(self.screen, piece)
+        pygame.display.flip()
+
     #Hilfsmethoden für die Promotion zur auswahl der Figur
     def promotion(self):
         #Definition der Farben und Schriftart und Größe

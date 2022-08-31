@@ -148,12 +148,12 @@ class Screen:
 
     #Computer spielt, 
     def computer(self):
+        pygame.display.flip()
         chesscomputer = ChessComputer()
         chesscomputermove = chesscomputer.get_move(self.board)
         if chesscomputermove == None:
             return
-        self.board.do_move(chesscomputermove)
-        self.draw.draw_computer()
+        self.draw.draw_computer(chesscomputermove)
 
     #Wenn es einen Gewinner gibt, wird dieser angezeigt
     def wennWinner(self):
