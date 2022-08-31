@@ -3,8 +3,9 @@ import pygame
 from ChessUtils import *
 from Board import *
 from Screen import *
-
+#Zeichnen einzelner Figuren
 class Pieces(pygame.sprite.Sprite):
+    #Initialisieren
     def __init__(self, filename, cols, rows, board):
         self.board = board
         pygame.sprite.Sprite.__init__(self)
@@ -28,6 +29,7 @@ class Pieces(pygame.sprite.Sprite):
 
         self.cells = list([(i % cols * w, i // cols * h, w, h) for i in range(self.cell_count)])
 
+    #Zeichnen einer Figur
     def draw(self, screen, piece):
         self.piece_index = self.index[type(piece)] + 6 * (piece.color)
         x, y = piece.pos

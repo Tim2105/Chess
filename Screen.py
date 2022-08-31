@@ -8,8 +8,8 @@ from Draw import *
 
 class Screen:
     def __init__(self):
+        #Initialisiere pygame und das Board Objekt
         self.board = Board()
-        #initialize pygame
         pygame.display.init()
         #Screen erstellen
         self.screenWidth = 640
@@ -33,8 +33,8 @@ class Screen:
         pygame.display.flip()
         self.clock = pygame.time.Clock()
 
+    #Spiel Schleife
     def start_game(self):
-        
         self.board_X = 0
         self.board_Y = 50
         self.board_Width = (self.board_X, self.board_Y)
@@ -43,10 +43,10 @@ class Screen:
         
         self.pieces_src = os.path.join(self.sources, "figuren.png")
         self.pieces_con = pygame.image.load(self.pieces_src).convert()
-        # create class object that handles the gameplay logic
+
         self.draw = Draw(self.screen, self.pieces_src, self.square_Length, self.board)
 
-        # game loop
+        #Schleife die solange ausführt wie das Programm laufen soll
         while self.running:
             self.clock.tick(5)
             for event in pygame.event.get():
@@ -68,6 +68,7 @@ class Screen:
 
         pygame.quit()
 
+    #Menü anzeigen
     def show_menu(self):
         background_color = (139,69,19)
         self.screen.fill(background_color)
@@ -121,11 +122,12 @@ class Screen:
                 self.menu_showed = True
             pygame.display.flip()
 
+    #Bestimmen ob es einen Gewinner gibt
     def get_winner(self) -> bool:
         if len(self.board.get_legal_moves(self.board.turn)) == 0 and self.board.is_in_check(self.board.turn):
             print("ad")
             return True
-
+    #Zwei Spieler spielen aufruf der Funktionen die benötigt werden
     def two_player(self):
         color = (155, 155, 155)
         self.screen.fill(color)
@@ -133,6 +135,7 @@ class Screen:
         self.draw.draw_turn()
         self.draw.gamelogic_two_player()
 
+    #Solo Spieler spielen aufruf der Funktionen die benötigt werden
     def solo_game(self):
         color = (155, 155, 155)
         self.screen.fill(color)
@@ -143,6 +146,7 @@ class Screen:
         if self.board.turn == 1:
             self.computer()
 
+    #Computer spielt, 
     def computer(self):
         chesscomputer = ChessComputer()
         chesscomputermove = chesscomputer.get_move(self.board)
@@ -151,37 +155,30 @@ class Screen:
         self.board.do_move(chesscomputermove)
         self.draw.draw_computer()
 
+    #Wenn es einen Gewinner gibt, wird dieser angezeigt
     def wennWinner(self):
-        print("winner")
-        # background color
+        #Hintergrundfarbe und Schriftart
         background_color = (155, 155, 155)
-        # set background color
         self.screen.fill(background_color)
         black_color = (0, 0, 0)
         white_color = (255, 255, 255)
-        # coordinates for play again button
         reset_btn = pygame.Rect(245, 300, 140, 50)
-        # show reset button
         pygame.draw.rect(self.screen, black_color, reset_btn)        
-        # create fonts for texts
         big_font = pygame.font.SysFont('comicsansms', 50)
         small_font = pygame.font.SysFont('comicsansms', 20)
-
-        # text to show winner
+        #Text der angezeigt werden soll wer gewonnen hat
         if self.board.turn == 1:
             text = "Weiß hat gewonnen!"
         else:
             text = "Schwarz hat gewonnen!"
+        #Text anzeigen und Button anzeigen
         winner_text = big_font.render(text, False, black_color)
-        # create text to be shown on the reset button
         reset_label = "Menü"
         reset_btn_label = small_font.render(reset_label, True, white_color)
-        # show winner text
         self.screen.blit(winner_text, ((self.screen.get_width() - winner_text.get_width()) // 2, 150))        
-        # show text on the reset button
         self.screen.blit(reset_btn_label, ((reset_btn.x + (reset_btn.width - reset_btn_label.get_width()) // 2, reset_btn.y + (reset_btn.height - reset_btn_label.get_height()) // 2)))
         pygame.display.flip()
-
+        #Wenn der Reset Button geklickt wird, wird das Spiel neugestartet
         while self.menu_showed == True:
             mouseposition = self.get_mouse_pos()
             if reset_btn.collidepoint(mouseposition):
@@ -191,7 +188,7 @@ class Screen:
                 self.draw = Draw(self.screen, self.pieces_src, self.square_Length, self.board)
                 pygame.display.flip()
 
-
+    #Bestimmen der Mauskoordinaten
     def get_mouse_pos(self):
         pygame.event.clear()
         event = pygame.event.wait()
