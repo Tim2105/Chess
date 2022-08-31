@@ -18,7 +18,7 @@ class Transposition_Table_Entry:
         self.depth = depth
         self.entry_type = entry_type
         self.move = None
-        self.killer_moves = []
+        self.killer_moves = [None, None]
 
 # Enthält alle Attribute und Methoden, die ein Schachcomputer benötigt
 class ChessComputer:
@@ -137,8 +137,6 @@ class ChessComputer:
         self.best_move = None
         self.last_search_interrupted = False
         self.mate_found = False
-        self.nodes_visited = 0
-        self.transpositions = 0
 
     # gibt den PST-Wert für eine Figur zurück
     def get_pst_value(self, piece : Piece, use_endgame_values = False) -> int:
@@ -308,10 +306,11 @@ class ChessComputer:
                         
                 board.undo_move(False)
             elif not quiescence_order:
-                if move in self.killer_moves[depth - 1]:
-                    # wenn Killer-Züge unter den zu sortierenden Zügen sind, merke diese
-                    killer_moves.append(move)
-                    moves_copy.remove(move)
+                if board.hash in self.transposition_table:
+                    for move in moves_copy:
+                        if move in self.transposition_table[board.hash].killer_moves:
+                            killer_moves.append(move)
+                            moves_copy.remove(move)
                 elif isinstance(move, Pawn_Double_Move):
                     # filtere Doppelzüge von Bauern
                     pawn_double_moves.append(move)
@@ -327,11 +326,8 @@ class ChessComputer:
     # Quiescence-Suche
     # Traversiert den Spielbaum nur noch mit Schlagzügen, Züge die den Gegner in Schach setzen und Bauernaufwertungen
     def quiescence(self, board : Board, depth : int, alpha : int, beta : int) -> int:
-        self.nodes_visited += 1
-
         # überprüfe, ob das Spielfeld schonmal evaluiert wurde
         if board.hash in self.transposition_table:
-            self.transpositions += 1
             tt_entry = self.transposition_table[board.hash]
             if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT or tt_entry.entry_type == Transposition_Table_Entry_Type.QUIESCENT:
                 return tt_entry.value
@@ -373,7 +369,7 @@ class ChessComputer:
 
             legal_moves = board.get_legal_moves(board.turn)
 
-            # Wenn wir nicht im Schach stehtn und keine legalen Züge haben, sind wir Patt
+            # Wenn wir nicht im Schach stehen und keine legalen Züge haben, sind wir Patt
             if len(legal_moves) == 0:
                 if board.hash not in self.transposition_table:
                     tt_entry = Transposition_Table_Entry(0, -1, Transposition_Table_Entry_Type.QUIESCENT)
@@ -425,9 +421,7 @@ class ChessComputer:
         return alpha
 
     # NegaScout Variante der Alpha-Beta-Suche
-    def alpha_beta(self, board : Board, depth : int, alpha : int, beta : int) -> int:
-        self.nodes_visited += 1
-        
+    def alpha_beta(self, board : Board, depth : int, alpha : int, beta : int) -> int:    
         # überprüfe, ob die Spielposition in der Transpositionstabelle enthalten ist
         if board.hash in self.transposition_table:
             tt_entry = self.transposition_table[board.hash]
@@ -438,16 +432,13 @@ class ChessComputer:
                 # Wenn der Eintrag in der Transpositionstabelle ein exakter Eintrag ist,
                 # dann wurden alle Kinder bewertet und wir wissen, dass das die tatsächliche Bewertung ist
                 if tt_entry.entry_type == Transposition_Table_Entry_Type.EXACT:
-                    self.transpositions += 1
                     return tt_entry.value
                 # Dieser Knoten wurde letztes mal durch die Beta-Bedingung abgeschnitten
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.LOWER_BOUND:
-                    self.transpositions += 1
                     if tt_entry.value >= beta:
                         beta = tt_entry.value
                 # Dieser Knoten wurde letztes mal vollständig bewertet, jedoch konnte alpha nicht verbessert werden
                 elif tt_entry.entry_type == Transposition_Table_Entry_Type.UPPER_BOUND:
-                    self.transpositions += 1
                     if tt_entry.value <= alpha:
                         alpha = tt_entry.value
                 
@@ -457,7 +448,6 @@ class ChessComputer:
 
         # An Blattknoten wird die Quiescence-Suche gestartet
         if depth == 0:
-            self.nodes_visited -= 1
             return self.quiescence(board, self.MAX_QUIESCENCE_CHECK_DEPTH, alpha, beta)
 
         tt_type = Transposition_Table_Entry_Type.UPPER_BOUND
@@ -501,12 +491,16 @@ class ChessComputer:
             if val >= beta:
                 tt_entry = Transposition_Table_Entry(beta, depth, Transposition_Table_Entry_Type.LOWER_BOUND)
                 tt_entry.move = move
-                self.transposition_table[board.hash] = tt_entry
-
                 # Speichere Killer-Move ab
                 if move.captured == None:
-                    self.killer_moves[depth - 1][0] = self.killer_moves[depth - 1][1]
-                    self.killer_moves[depth - 1][1] = move
+                    prev_killer_moves = [None, None]
+                    if board.hash in self.transposition_table:
+                        prev_killer_moves = self.transposition_table[board.hash].killer_moves
+                    
+                    prev_killer_moves[0] = prev_killer_moves[1]
+                    prev_killer_moves[1] = move
+                    tt_entry.killer_moves = prev_killer_moves
+                self.transposition_table[board.hash] = tt_entry
                 return beta
 
             # Wir konnten mit diesem Zug das Alpha verbessern
@@ -547,12 +541,9 @@ class ChessComputer:
     # sucht nach einem Zug für den Spieler, der nach board am Zug ist
     def get_move(self, board : Board, search_time : float = 2) -> Move:
         self.curr_depth = 0
-        self.nodes_visited = 0
-        self.transpositions = 0
         self.searching = True
         self.last_search_interrupted = False
         self.mate_found = False
-        self.killer_moves = []
         self.transposition_table.clear()
 
         timer = Timer(search_time, self.stop_search)
@@ -561,7 +552,6 @@ class ChessComputer:
         # iterative Tiefensuche
         while self.searching:
             self.curr_depth += 1
-            self.killer_moves = [[None, None]] + self.killer_moves
 
             val = self.alpha_beta(board, self.curr_depth, -self.INFINITY, self.INFINITY)
 
