@@ -545,7 +545,7 @@ class ChessComputer:
     
     # sucht mittels iterativer Tiefensuche nach dem besten Zug auf dem gegeben Schachbrett
     # sucht nach einem Zug für den Spieler, der nach board am Zug ist
-    def get_move(self, board : Board, search_time : float = 4) -> Move:
+    def get_move(self, board : Board, search_time : float = 2) -> Move:
         self.curr_depth = 0
         self.nodes_visited = 0
         self.transpositions = 0
@@ -567,7 +567,6 @@ class ChessComputer:
 
             # Statusmeldung ausgeben und besten Zug abspeichern
             if not self.last_search_interrupted:
-                print(f"Depth: {self.curr_depth:2d} | Nodes visited: {self.nodes_visited:6d} | Transpositions: {self.transpositions:6d} | Value: {val:6d} | Best move: {self.transposition_table[board.hash].move}")
                 self.best_move = self.transposition_table[board.hash].move
 
             # Wenn wir Matt gefunden haben, können wir abbrechen
