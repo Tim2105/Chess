@@ -4,7 +4,7 @@ import os
 from pygame.locals import *
 from ChessComputer import ChessComputer
 from Pieces import *
-from Draw import *
+from Gamelogic import *
 
 class Screen:
     def __init__(self):
@@ -44,7 +44,7 @@ class Screen:
         self.pieces_src = os.path.join(self.sources, "figuren.png")
         self.pieces_con = pygame.image.load(self.pieces_src).convert()
 
-        self.draw = Draw(self.screen, self.pieces_src, self.square_Length, self.board)
+        self.draw = Gamelogic(self.screen, self.pieces_src, self.square_Length, self.board)
 
         #Schleife die solange ausführt wie das Programm laufen soll
         while self.running:
@@ -57,7 +57,7 @@ class Screen:
                 pygame.display.flip()
                 self.show_menu()
             elif self.get_winner(): 
-                self.wennWinner()
+                self.when_winner()
             elif self.Solo == True:
                 self.solo_game()
             else:
@@ -87,8 +87,8 @@ class Screen:
         headline = big_font.render("Schach", False, black_color)
         created_by = small_font.render("Created by: Tim Plotzki und Nils Bachmann", True, black_color)
         #Rendern der Button
-        start_Together_btn_label = small_font.render("Play Together", True, white_color)
-        start_Solo_btn_label = small_font.render("Play Solo", True, white_color)
+        start_Together_btn_label = small_font.render("Mehrspieler", True, white_color)
+        start_Solo_btn_label = small_font.render("Einzelspieler", True, white_color)
         #Koordinaten für Button und Text
         start_Together_btn_label_x = start_Together_btn.x + (start_Together_btn.width - start_Together_btn_label.get_width()) // 2
         start_Together_btn_label_y = start_Together_btn.y + (start_Together_btn.height - start_Together_btn_label.get_height()) // 2
@@ -156,7 +156,7 @@ class Screen:
         self.draw.draw_computer(chesscomputermove)
 
     #Wenn es einen Gewinner gibt, wird dieser angezeigt
-    def wennWinner(self):
+    def when_winner(self):
         #Hintergrundfarbe und Schriftart
         background_color = (155, 155, 155)
         self.screen.fill(background_color)
@@ -185,7 +185,7 @@ class Screen:
                 pygame.draw.rect(self.screen, white_color, reset_btn, 3)
                 self.menu_showed = False
                 self.board = Board()
-                self.draw = Draw(self.screen, self.pieces_src, self.square_Length, self.board)
+                self.draw = Gamelogic(self.screen, self.pieces_src, self.square_Length, self.board)
                 pygame.display.flip()
 
     #Bestimmen der Mauskoordinaten
